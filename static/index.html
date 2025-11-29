@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PGAME - WHOOP Dashboard</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #0b1221;
+      color: #e5eaf5;
+      margin: 0;
+      padding: 0;
+    }
+    header {
+      background: #141d33;
+      padding: 1.5rem;
+      text-align: center;
+      border-bottom: 1px solid #1f2a44;
+    }
+    h1 {
+      margin: 0;
+      font-size: 1.8rem;
+      letter-spacing: 0.05rem;
+    }
+    main {
+      padding: 1.5rem;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+    }
+    .card {
+      background: #141d33;
+      border: 1px solid #1f2a44;
+      border-radius: 8px;
+      padding: 1rem;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+    }
+    .card h2 {
+      margin-top: 0;
+      font-size: 1.2rem;
+      color: #8dd9ff;
+    }
+    .list-item {
+      padding: 0.35rem 0;
+      border-bottom: 1px solid #1f2a44;
+      font-size: 0.95rem;
+    }
+    .list-item:last-child {
+      border-bottom: none;
+    }
+    .badge {
+      display: inline-block;
+      background: #3fbf7f;
+      color: #0b1221;
+      padding: 0.2rem 0.5rem;
+      border-radius: 6px;
+      font-size: 0.75rem;
+      font-weight: bold;
+      margin-left: 0.35rem;
+    }
+    #status {
+      text-align: center;
+      margin-top: 0.5rem;
+      color: #f8c555;
+    }
+    .pill {
+      display: inline-block;
+      padding: 0.15rem 0.45rem;
+      border-radius: 12px;
+      background: #253559;
+      color: #e5eaf5;
+      font-size: 0.75rem;
+      margin-left: 0.25rem;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>PGAME — WHOOP Dashboard</h1>
+    <p id="status">Loading your latest WHOOP data…</p>
+  </header>
+  <main>
+    <section class="card" id="profile-card">
+      <h2>Profile</h2>
+      <div id="profile"></div>
+    </section>
+    <section class="card" id="body-card">
+      <h2>Body Metrics</h2>
+      <div id="body"></div>
+    </section>
+    <section class="card" id="cycles-card">
+      <h2>Recent Cycles</h2>
+      <div id="cycles"></div>
+    </section>
+    <section class="card" id="recoveries-card">
+      <h2>Recent Recoveries</h2>
+      <div id="recoveries"></div>
+    </section>
+    <section class="card" id="sleeps-card">
+      <h2>Recent Sleeps</h2>
+      <div id="sleeps"></div>
+    </section>
+    <section class="card" id="workouts-card">
+      <h2>Recent Workouts</h2>
+      <div id="workouts"></div>
+    </section>
+  </main>
+  <script>
+    async function loadOverview() {
+      const status = document.getElementById('status');
+      try {
+        const response = await fetch('/api/overview');
+        if (!response.ok) {
+          const detail = await response.json();
+          throw new Error(detail.detail || 'Request failed');
+        }
+        const data = await response.json();
+        status.textContent = 'Data loaded. Refresh to fetch latest metrics.';
+        renderProfile(data.profile);
+        renderBody(data.body);
+        renderList(data.cycles.records, 'cycles', cycle => {
+          const strain = cycle.score?.strain ?? '—';
+          return `${new Date(cycle.start).toLocaleDateString()} — Strain ${strain.toFixed ? strain.toFixed(1) : strain}`;
+        });
+        renderList(data.recoveries.records, 'recoveries', rec => {
+          const score = rec.score?.recovery_score;
+          return `${new Date(rec.created_at).toLocaleDateString()} — Recovery ${score != null ? score + '%' : 'pending'}`;
+        });
+        renderList(data.sleeps.records, 'sleeps', sleep => {
+          const perf = sleep.score?.sleep_performance_percentage;
+          return `${new Date(sleep.start).toLocaleDateString()} — Sleep ${perf != null ? perf + '%' : 'pending'}`;
+        });
+        renderList(data.workouts.records, 'workouts', workout => {
+          const strain = workout.score?.strain ?? '—';
+          return `${workout.sport_name ?? 'Workout'} — Strain ${strain.toFixed ? strain.toFixed(1) : strain}`;
+        });
+      } catch (error) {
+        status.textContent = `Unable to load data: ${error.message}`;
+      }
+    }
+
+    function renderProfile(profile) {
+      const container = document.getElementById('profile');
+      container.innerHTML = '';
+      if (!profile) {
+        container.textContent = 'No profile found.';
+        return;
+      }
+      const name = `${profile.first_name} ${profile.last_name}`;
+      container.innerHTML = `<div class="list-item">${name}<span class="pill">${profile.email}</span></div>`;
+    }
+
+    function renderBody(body) {
+      const container = document.getElementById('body');
+      container.innerHTML = '';
+      if (!body) {
+        container.textContent = 'No body metrics found.';
+        return;
+      }
+      const items = [
+        `Height: ${body.height_meter} m`,
+        `Weight: ${body.weight_kilogram} kg`,
+        `Max HR: ${body.max_heart_rate}`
+      ];
+      items.forEach(text => {
+        const div = document.createElement('div');
+        div.className = 'list-item';
+        div.textContent = text;
+        container.appendChild(div);
+      });
+    }
+
+    function renderList(records, id, formatter) {
+      const container = document.getElementById(id);
+      container.innerHTML = '';
+      if (!records || records.length === 0) {
+        container.textContent = 'No data yet.';
+        return;
+      }
+      records.forEach(item => {
+        const div = document.createElement('div');
+        div.className = 'list-item';
+        div.textContent = formatter(item);
+        container.appendChild(div);
+      });
+    }
+
+    loadOverview();
+  </script>
+</body>
+</html>
