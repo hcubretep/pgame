@@ -79,7 +79,12 @@ def run_server(host: str = "0.0.0.0", port: int = 8000) -> None:
     handler = partial(DashboardHandler, directory=str(BASE_DIR))
     httpd = HTTPServer((host, port), handler)
     print(f"PGAME dashboard running at http://{host}:{port}")
-    httpd.serve_forever()
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nShutting down PGAME dashboard...")
+    finally:
+        httpd.server_close()
 
 
 if __name__ == "__main__":
