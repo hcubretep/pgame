@@ -12,9 +12,17 @@ PGAME is a minimal FastAPI-powered dashboard that surfaces a user's WHOOP data i
    ```bash
    pip install -r requirements.txt
    ```
+   If you prefer to use the included npm scripts for running the server, install Node packages as well:
+   ```bash
+   npm install
+   ```
 4. Launch the FastAPI app:
    ```bash
    uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+   ```
+   Or start it via the npm dev script (requires `uvicorn` in your Python environment):
+   ```bash
+   npm run dev
    ```
 5. Open the dashboard preview at http://localhost:8000.
 
