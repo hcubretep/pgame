@@ -1,0 +1,511 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PGAME - WHOOP Dashboard</title>
+  <style>
+    :root {
+      --bg: #070b14;
+      --panel: #0f1627;
+      --panel-border: #1f2a44;
+      --text: #e6e9f5;
+      --muted: #9fb3d4;
+      --accent: #63b3ff;
+      --accent-strong: #3fbf7f;
+      --danger: #ff6b6b;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: "Inter", system-ui, -apple-system, sans-serif;
+      background: radial-gradient(circle at 20% 20%, rgba(99, 179, 255, 0.08), transparent 35%),
+                  radial-gradient(circle at 80% 10%, rgba(63, 191, 127, 0.08), transparent 30%),
+                  var(--bg);
+      color: var(--text);
+      margin: 0;
+      min-height: 100vh;
+    }
+
+    header {
+      position: sticky;
+      top: 0;
+      backdrop-filter: blur(12px);
+      background: rgba(7, 11, 20, 0.85);
+      border-bottom: 1px solid var(--panel-border);
+      padding: 1.25rem 1.5rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 10;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .logo {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #63b3ff, #3fbf7f);
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      color: #0b1221;
+      letter-spacing: -0.04em;
+      box-shadow: 0 10px 30px rgba(99, 179, 255, 0.2);
+    }
+
+    .title {
+      display: flex;
+      flex-direction: column;
+      gap: 0.15rem;
+    }
+
+    .title h1 {
+      margin: 0;
+      font-size: 1.2rem;
+      letter-spacing: 0.01em;
+    }
+
+    .title span {
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    button.refresh {
+      background: linear-gradient(135deg, #63b3ff, #3f80ff);
+      color: #0b1221;
+      border: none;
+      border-radius: 12px;
+      padding: 0.65rem 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 12px 35px rgba(99, 179, 255, 0.25);
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    button.refresh:active {
+      transform: translateY(1px);
+      box-shadow: 0 6px 18px rgba(99, 179, 255, 0.2);
+    }
+
+    main {
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .status {
+      border: 1px solid var(--panel-border);
+      background: rgba(17, 25, 42, 0.8);
+      padding: 0.85rem 1rem;
+      border-radius: 12px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-size: 0.95rem;
+    }
+
+    .status .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--accent);
+      box-shadow: 0 0 0 4px rgba(99, 179, 255, 0.15);
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(1); opacity: 1; }
+      50% { transform: scale(1.2); opacity: 0.6; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 1rem;
+    }
+
+    .panel {
+      background: rgba(15, 22, 39, 0.85);
+      border: 1px solid var(--panel-border);
+      border-radius: 16px;
+      padding: 1rem 1.1rem;
+      box-shadow: 0 20px 45px rgba(0, 0, 0, 0.35);
+    }
+
+    .panel h2 {
+      margin: 0 0 0.5rem;
+      font-size: 1.1rem;
+      letter-spacing: 0.01em;
+      color: var(--accent);
+    }
+
+    .muted {
+      color: var(--muted);
+    }
+
+    .list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.65rem;
+    }
+
+    .item {
+      padding: 0.75rem;
+      border: 1px solid var(--panel-border);
+      border-radius: 12px;
+      background: rgba(20, 29, 51, 0.9);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .item .label {
+      font-weight: 600;
+    }
+
+    .chip {
+      padding: 0.25rem 0.65rem;
+      border-radius: 999px;
+      background: #1e2943;
+      color: var(--muted);
+      font-size: 0.85rem;
+      border: 1px solid var(--panel-border);
+    }
+
+    .metric-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+      gap: 0.75rem;
+      margin-top: 0.25rem;
+    }
+
+    .stat {
+      padding: 0.6rem 0.75rem;
+      border-radius: 12px;
+      border: 1px solid var(--panel-border);
+      background: rgba(18, 27, 48, 0.9);
+    }
+
+    .stat .label { font-size: 0.8rem; color: var(--muted); }
+    .stat .value { font-weight: 700; font-size: 1rem; margin-top: 0.25rem; }
+
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      background: rgba(99, 179, 255, 0.12);
+      color: var(--text);
+      padding: 0.35rem 0.65rem;
+      border-radius: 999px;
+      border: 1px solid rgba(99, 179, 255, 0.35);
+      font-weight: 600;
+    }
+
+    .tag.danger {
+      background: rgba(255, 107, 107, 0.12);
+      border-color: rgba(255, 107, 107, 0.35);
+      color: #ffd1d1;
+    }
+
+    .empty {
+      color: var(--muted);
+      font-size: 0.95rem;
+      padding: 0.5rem 0.25rem;
+    }
+
+    .badge {
+      background: rgba(63, 191, 127, 0.15);
+      color: var(--text);
+      padding: 0.2rem 0.55rem;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      border: 1px solid rgba(63, 191, 127, 0.4);
+    }
+
+    .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
+
+    @media (max-width: 600px) {
+      header { flex-direction: column; align-items: flex-start; gap: 0.75rem; }
+      .brand { width: 100%; justify-content: space-between; }
+      .status { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="logo">PG</div>
+      <div class="title">
+        <h1>PGAME — WHOOP Dashboard</h1>
+        <span class="muted">Personal glance at your strain, sleep, and recovery</span>
+      </div>
+    </div>
+    <button class="refresh" id="refresh">Refresh data</button>
+  </header>
+
+  <main>
+    <div class="status" id="status">
+      <span class="dot"></span>
+      <span>Fetching your latest WHOOP overview…</span>
+    </div>
+
+    <section class="grid">
+      <article class="panel" id="profile-card">
+        <h2>Profile &amp; Body</h2>
+        <div id="profile"></div>
+      </article>
+      <article class="panel" id="spotlight-card">
+        <h2>Today at a glance</h2>
+        <div class="list" id="spotlight"></div>
+      </article>
+      <article class="panel" id="workouts-card">
+        <h2>Recent Workouts</h2>
+        <div id="workouts"></div>
+      </article>
+    </section>
+
+    <section class="grid">
+      <article class="panel" id="cycles-card">
+        <h2>Recent Cycles</h2>
+        <div id="cycles"></div>
+      </article>
+      <article class="panel" id="recoveries-card">
+        <h2>Recent Recoveries</h2>
+        <div id="recoveries"></div>
+      </article>
+      <article class="panel" id="sleeps-card">
+        <h2>Recent Sleeps</h2>
+        <div id="sleeps"></div>
+      </article>
+    </section>
+  </main>
+
+  <script>
+    const statusBox = document.getElementById('status');
+    const refreshBtn = document.getElementById('refresh');
+
+    async function loadOverview() {
+      setStatus('Fetching your latest WHOOP overview…', 'loading');
+      refreshBtn.disabled = true;
+      try {
+        const response = await fetch('/api/overview');
+        if (!response.ok) {
+          const detail = await response.json().catch(() => ({}));
+          throw new Error(detail.detail || 'Request failed');
+        }
+        const data = await response.json();
+        setStatus('Data loaded. Refresh to update.', 'ok');
+        renderProfile(data.profile, data.body);
+        renderSpotlight(data);
+        renderList(data.workouts?.records, 'workouts', renderWorkoutItem);
+        renderList(data.cycles?.records, 'cycles', renderCycleItem);
+        renderList(data.recoveries?.records, 'recoveries', renderRecoveryItem);
+        renderList(data.sleeps?.records, 'sleeps', renderSleepItem);
+      } catch (error) {
+        setStatus(`Unable to load data: ${error.message}`, 'error');
+      } finally {
+        refreshBtn.disabled = false;
+      }
+    }
+
+    function setStatus(message, state) {
+      statusBox.innerHTML = '';
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      if (state === 'error') {
+        dot.style.background = 'var(--danger)';
+        dot.style.boxShadow = '0 0 0 4px rgba(255, 107, 107, 0.2)';
+      }
+      if (state === 'loading') {
+        dot.style.animation = 'pulse 1.4s ease-in-out infinite';
+      }
+      const text = document.createElement('span');
+      text.textContent = message;
+      statusBox.append(dot, text);
+    }
+
+    function renderProfile(profile, body) {
+      const container = document.getElementById('profile');
+      container.innerHTML = '';
+      if (!profile) {
+        container.innerHTML = '<p class="muted">No profile found.</p>';
+        return;
+      }
+
+      const name = `${profile.first_name ?? ''} ${profile.last_name ?? ''}`.trim();
+      const card = document.createElement('div');
+      card.className = 'item';
+      card.innerHTML = `
+        <div>
+          <div class="label">${name || 'Unknown User'}</div>
+          <div class="muted">${profile.email ?? 'No email'}</div>
+        </div>
+        <span class="badge mono">ID: ${profile.user_id ?? '—'}</span>
+      `;
+
+      const metrics = document.createElement('div');
+      metrics.className = 'metric-row';
+      const metricItems = [
+        { label: 'Height', value: body?.height_meter ? `${body.height_meter} m` : '—' },
+        { label: 'Weight', value: body?.weight_kilogram ? `${body.weight_kilogram} kg` : '—' },
+        { label: 'Max HR', value: body?.max_heart_rate ?? '—' }
+      ];
+      metricItems.forEach(m => {
+        const stat = document.createElement('div');
+        stat.className = 'stat';
+        stat.innerHTML = `<div class="label">${m.label}</div><div class="value">${m.value}</div>`;
+        metrics.appendChild(stat);
+      });
+
+      container.append(card, metrics);
+    }
+
+    function renderSpotlight(data) {
+      const container = document.getElementById('spotlight');
+      container.innerHTML = '';
+      const sleep = data.sleeps?.records?.[0];
+      const recovery = data.recoveries?.records?.[0];
+      const cycle = data.cycles?.records?.[0];
+
+      const spotlightItems = [
+        {
+          title: 'Latest Recovery',
+          value: recovery?.score?.recovery_score != null ? `${recovery.score.recovery_score}%` : 'Pending',
+          meta: recovery ? `Resting HR: ${fmtNumber(recovery.score?.resting_heart_rate)} bpm` : 'No recovery data',
+          tone: recovery?.score?.recovery_score >= 67 ? 'ok' : undefined,
+        },
+        {
+          title: 'Last Sleep',
+          value: sleep?.score?.sleep_performance_percentage != null ? `${sleep.score.sleep_performance_percentage}%` : 'Pending',
+          meta: sleep ? `Duration: ${fmtDuration(sleep.score?.stage_summary?.total_in_bed_time_milli)}` : 'No sleep data',
+        },
+        {
+          title: 'Current Cycle Strain',
+          value: cycle?.score?.strain != null ? cycle.score.strain.toFixed(1) : 'Pending',
+          meta: cycle ? `Avg HR: ${fmtNumber(cycle.score?.average_heart_rate)} bpm` : 'No cycle data',
+        }
+      ];
+
+      spotlightItems.forEach(item => {
+        const row = document.createElement('div');
+        row.className = 'item';
+        row.innerHTML = `
+          <div>
+            <div class="label">${item.title}</div>
+            <div class="muted">${item.meta}</div>
+          </div>
+          <span class="tag ${item.tone === 'ok' ? '' : ''}">${item.value}</span>
+        `;
+        container.appendChild(row);
+      });
+    }
+
+    function renderList(records, id, renderer) {
+      const container = document.getElementById(id);
+      container.innerHTML = '';
+      if (!records || records.length === 0) {
+        container.innerHTML = '<div class="empty">No data yet.</div>';
+        return;
+      }
+      const list = document.createElement('div');
+      list.className = 'list';
+      records.forEach(rec => list.appendChild(renderer(rec)));
+      container.appendChild(list);
+    }
+
+    function renderWorkoutItem(workout) {
+      const div = document.createElement('div');
+      const strain = workout.score?.strain;
+      const hr = workout.score?.average_heart_rate;
+      div.className = 'item';
+      div.innerHTML = `
+        <div>
+          <div class="label">${workout.sport_name ?? 'Workout'}</div>
+          <div class="muted">${formatDate(workout.start)}</div>
+        </div>
+        <div class="chip">Strain ${strain != null ? strain.toFixed(1) : '—'} | Avg HR ${fmtNumber(hr)} bpm</div>
+      `;
+      return div;
+    }
+
+    function renderCycleItem(cycle) {
+      const div = document.createElement('div');
+      const strain = cycle.score?.strain;
+      div.className = 'item';
+      div.innerHTML = `
+        <div>
+          <div class="label">Cycle ${cycle.id}</div>
+          <div class="muted">${formatDate(cycle.start)}</div>
+        </div>
+        <div class="chip">Strain ${strain != null ? strain.toFixed(1) : '—'}</div>
+      `;
+      return div;
+    }
+
+    function renderRecoveryItem(rec) {
+      const div = document.createElement('div');
+      const score = rec.score?.recovery_score;
+      const tone = score != null && score < 34 ? 'danger' : '';
+      div.className = 'item';
+      div.innerHTML = `
+        <div>
+          <div class="label">Recovery ${rec.cycle_id ?? ''}</div>
+          <div class="muted">${formatDate(rec.created_at)}</div>
+        </div>
+        <div class="tag ${tone}">${score != null ? score + '%' : 'Pending'}</div>
+      `;
+      return div;
+    }
+
+    function renderSleepItem(sleep) {
+      const div = document.createElement('div');
+      const performance = sleep.score?.sleep_performance_percentage;
+      const duration = fmtDuration(sleep.score?.stage_summary?.total_in_bed_time_milli);
+      div.className = 'item';
+      div.innerHTML = `
+        <div>
+          <div class="label">Sleep ${sleep.nap ? '(Nap)' : ''}</div>
+          <div class="muted">${formatDate(sleep.start)} · In bed ${duration}</div>
+        </div>
+        <div class="chip">Performance ${performance != null ? performance + '%' : 'Pending'}</div>
+      `;
+      return div;
+    }
+
+    function fmtDuration(ms) {
+      if (!ms) return '—';
+      const hours = Math.floor(ms / 3600000);
+      const minutes = Math.round((ms % 3600000) / 60000);
+      return `${hours}h ${minutes}m`;
+    }
+
+    function fmtNumber(num) {
+      return num != null ? Number(num).toFixed(0) : '—';
+    }
+
+    function formatDate(dateStr) {
+      if (!dateStr) return '—';
+      const date = new Date(dateStr);
+      return date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    }
+
+    refreshBtn.addEventListener('click', loadOverview);
+    loadOverview();
+  </script>
+</body>
+</html>
