@@ -1,11 +1,10 @@
-import os
+import json
 from typing import Any, Dict, Optional
-
-import requests
+from urllib import error, parse, request
 
 
 class WhoopClient:
-    """Minimal client for the WHOOP developer API."""
+    """Minimal client for the WHOOP developer API using urllib."""
 
     def __init__(self, token: Optional[str], base_url: str = "https://api.prod.whoop.com/developer") -> None:
         self.token = token
@@ -19,9 +18,18 @@ class WhoopClient:
             raise ValueError("Missing WHOOP access token. Set WHOOP_ACCESS_TOKEN in your environment.")
 
         url = f"{self.base_url}{path}"
-        response = requests.get(url, headers=self._headers(), params=params, timeout=20)
-        response.raise_for_status()
-        return response.json()
+        if params:
+            query = parse.urlencode(params)
+            url = f"{url}?{query}"
+
+        req = request.Request(url, headers=self._headers())
+        try:
+            with request.urlopen(req, timeout=20) as resp:
+                body = resp.read().decode("utf-8")
+                return json.loads(body)
+        except error.HTTPError as http_error:
+            status = http_error.code
+            raise ValueError(f"WHOOP API request failed with status {status}: {http_error.reason}") from http_error
 
     def get_profile(self) -> Dict[str, Any]:
         return self._get("/v2/user/profile/basic")
