@@ -16,7 +16,10 @@ PGAME is a minimal FastAPI-powered dashboard that surfaces a user's WHOOP data i
    ```bash
    uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
    ```
-5. Open http://localhost:8000 to view the dashboard.
+5. Open the dashboard preview at http://localhost:8000.
+
+If you're in a cloud dev environment (e.g., Codespaces), forward port **8000** and copy the forwarded URL to share a preview lin
+k.
 
 ## Notes
 - The `/api/overview` endpoint fetches the latest WHOOP entities (limited to 5 items each by default) and feeds them to the static UI in `static/index.html`.
