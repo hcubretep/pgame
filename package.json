@@ -1,0 +1,38 @@
+{
+  "name": "bloom-now",
+  "version": "1.0.0",
+  "description": "PWA für Eltern mit neurodivergenten Kindern - Screening & Orientierung",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://local_proxy@127.0.0.1:52116/git/hcubretep/pgame"
+  },
+  "keywords": ["pwa", "screening", "neurodivergent", "adhd", "autism"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@types/node": "^20.19.27",
+    "@types/react": "^18.3.27",
+    "@types/react-dom": "^18.3.7",
+    "autoprefixer": "^10.4.23",
+    "idb-keyval": "^6.2.2",
+    "next": "^14.2.35",
+    "pdf-lib": "^1.17.1",
+    "postcss": "^8.5.6",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwindcss": "^3.4.19",
+    "typescript": "^5.9.3",
+    "zustand": "^5.0.9"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^14.2.35"
+  }
+}
