@@ -16,20 +16,29 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
+    async signIn({ user }) {
+      // Upsert user in Supabase on every sign-in
+      if (user.email) {
+        try {
+          const { upsertUser } = await import('@/lib/db');
+          await upsertUser(user.email, user.name, user.image);
+        } catch (err) {
+          console.error('Failed to upsert user:', err);
+        }
+      }
+      return true;
+    },
     async jwt({ token, account }) {
-      // On initial sign-in, store tokens
       if (account) {
         token.accessToken = account.access_token;
         token.refreshToken = account.refresh_token;
         token.expiresAt = account.expires_at;
       }
 
-      // If token hasn't expired, return it
       if (token.expiresAt && Date.now() / 1000 < (token.expiresAt as number)) {
         return token;
       }
 
-      // Token expired — try to refresh
       if (token.refreshToken) {
         try {
           const res = await fetch('https://oauth2.googleapis.com/token', {
@@ -44,7 +53,6 @@ export const authOptions: NextAuthOptions = {
           });
 
           const data = await res.json();
-
           if (!res.ok) throw new Error(data.error || 'Refresh failed');
 
           token.accessToken = data.access_token;
