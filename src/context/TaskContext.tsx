@@ -8,7 +8,10 @@ import { prioritizeTasks, generateDelegationBrief, findBestDelegate } from '@/li
 interface TaskContextType {
   tasks: Task[];
   settings: Settings;
+  isAiLoading: boolean;
+  aiError: string | null;
   recalculate: () => void;
+  recalculateWithAi: () => Promise<void>;
   moveTask: (taskId: string, newStatus: Task['status']) => void;
   addTask: (task: Omit<Task, 'id' | 'createdAt' | 'status'>) => void;
   updateSettings: (settings: Partial<Settings>) => void;
@@ -22,14 +25,47 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState<Task[]>(() =>
     prioritizeTasks(mockTasks, mockSettings.deepWorkHours, mockSettings.delegates)
   );
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
 
   const recalculate = useCallback(() => {
+    setAiError(null);
     setTasks((prev) => {
-      // Reset all non-done tasks to inbox first
       const reset = prev.map((t) => (t.status === 'done' ? t : { ...t, status: 'inbox' as const }));
       return prioritizeTasks(reset, settings.deepWorkHours, settings.delegates);
     });
   }, [settings]);
+
+  const recalculateWithAi = useCallback(async () => {
+    setIsAiLoading(true);
+    setAiError(null);
+
+    // Reset tasks to inbox first
+    const resetTasks = tasks.map((t) => (t.status === 'done' ? t : { ...t, status: 'inbox' as const }));
+
+    try {
+      const res = await fetch('/api/prioritize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tasks: resetTasks, settings }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'AI prioritization failed');
+      }
+
+      const data = await res.json();
+      setTasks(data.tasks);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'AI prioritization failed';
+      setAiError(message);
+      // Fall back to local scoring
+      setTasks(prioritizeTasks(resetTasks, settings.deepWorkHours, settings.delegates));
+    } finally {
+      setIsAiLoading(false);
+    }
+  }, [tasks, settings]);
 
   const moveTask = useCallback(
     (taskId: string, newStatus: Task['status']) => {
@@ -78,7 +114,18 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
   return (
     <TaskContext.Provider
-      value={{ tasks, settings, recalculate, moveTask, addTask, updateSettings, getDelegationBrief }}
+      value={{
+        tasks,
+        settings,
+        isAiLoading,
+        aiError,
+        recalculate,
+        recalculateWithAi,
+        moveTask,
+        addTask,
+        updateSettings,
+        getDelegationBrief,
+      }}
     >
       {children}
     </TaskContext.Provider>

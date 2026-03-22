@@ -4,7 +4,7 @@ import { useTaskContext } from '@/context/TaskContext';
 import TaskCard from '@/components/TaskCard';
 
 export default function Dashboard() {
-  const { tasks, recalculate, settings } = useTaskContext();
+  const { tasks, recalculate, recalculateWithAi, isAiLoading, aiError, settings } = useTaskContext();
 
   const top3 = tasks.filter((t) => t.status === 'top3');
   const notToday = tasks.filter((t) => t.status === 'notToday');
@@ -32,13 +32,28 @@ export default function Dashboard() {
             You have {settings.deepWorkHours}h of deep work. Use them on what only you can do.
           </p>
         </div>
-        <button
-          onClick={recalculate}
-          className="text-xs px-3 py-1.5 rounded bg-zinc-900 text-white hover:bg-zinc-700 transition-colors shrink-0"
-        >
-          Recalculate
-        </button>
+        <div className="flex gap-2 shrink-0">
+          <button
+            onClick={recalculate}
+            className="text-xs px-3 py-1.5 rounded bg-zinc-100 text-zinc-700 hover:bg-zinc-200 transition-colors"
+          >
+            Local
+          </button>
+          <button
+            onClick={recalculateWithAi}
+            disabled={isAiLoading}
+            className="text-xs px-3 py-1.5 rounded bg-zinc-900 text-white hover:bg-zinc-700 transition-colors disabled:opacity-50"
+          >
+            {isAiLoading ? 'Thinking...' : 'AI Prioritize'}
+          </button>
+        </div>
       </div>
+
+      {aiError && (
+        <div className="mb-6 p-3 rounded bg-red-50 border border-red-200 text-xs text-red-700">
+          {aiError} — fell back to local scoring.
+        </div>
+      )}
 
       {/* Top 3 */}
       <section className="mb-10">
