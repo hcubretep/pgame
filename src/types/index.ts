@@ -16,6 +16,8 @@ export interface Task {
   delegateTo?: string;
   delegationBrief?: string;
   reasoning?: string;
+  source?: string; // 'manual' | 'google-calendar' | 'ai-generated'
+  gcalEventId?: string;
   createdAt: string;
 }
 

@@ -2,6 +2,27 @@ import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { Task, Settings } from '@/types';
 
+function buildBusinessContext(settings: Settings): string {
+  const parts: string[] = [];
+
+  if (settings.companyName) {
+    const desc = settings.companyDescription ? ` — ${settings.companyDescription}` : '';
+    parts.push(`Company: ${settings.companyName}${desc}`);
+  }
+  if (settings.companyStage) parts.push(`Stage: ${settings.companyStage}`);
+  if (settings.currentRevenue) parts.push(`Current revenue: ${settings.currentRevenue}`);
+  const goals = (settings.quarterlyGoals || []).filter((g) => g.trim());
+  if (goals.length > 0) {
+    parts.push(`Top quarterly goals:\n${goals.map((g, i) => `  ${i + 1}. ${g}`).join('\n')}`);
+  }
+  if (settings.biggestBottleneck) parts.push(`Biggest bottleneck: ${settings.biggestBottleneck}`);
+  if (settings.pipelineStatus) parts.push(`Sales pipeline: ${settings.pipelineStatus}`);
+  if (settings.founderSuperpower) parts.push(`Founder superpower (only they can do): ${settings.founderSuperpower}`);
+  if (settings.avoidDelegate) parts.push(`Should avoid / delegate: ${settings.avoidDelegate}`);
+
+  return parts.length > 0 ? `\nBUSINESS CONTEXT:\n${parts.join('\n')}\n` : '';
+}
+
 export async function POST(req: NextRequest) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
@@ -11,109 +32,106 @@ export async function POST(req: NextRequest) {
   const openai = new OpenAI({ apiKey });
   const { tasks, settings } = (await req.json()) as { tasks: Task[]; settings: Settings };
 
-  const inboxTasks = tasks.filter((t) => t.status === 'inbox' || t.status === 'top3' || t.status === 'notToday' || t.status === 'outsource');
+  const activeTasks = tasks.filter((t) => t.status !== 'done');
   const doneTasks = tasks.filter((t) => t.status === 'done');
-
-  if (inboxTasks.length === 0) {
-    return NextResponse.json({ tasks: doneTasks });
-  }
+  const businessContext = buildBusinessContext(settings);
 
   const delegateList = settings.delegates.length > 0
     ? settings.delegates.map((d) => `${d.name} (${d.role}) — can handle: ${d.capabilities.join(', ')}`).join('\n')
     : 'No delegates configured.';
 
-  const taskList = inboxTasks
-    .map(
-      (t, i) =>
-        `[${i}] "${t.title}" | ${t.category} | urgency:${t.urgency}/5 | revenue:${t.revenueImpact}/5 | leverage:${t.leverage}/5 | founderOnly:${t.founderOnly} | ${t.estimatedHours}h | deadline:${t.deadline || 'none'}\n    Description: ${t.description}`
-    )
+  const today = new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+
+  const calendarEvents = activeTasks
+    .filter((t) => t.source === 'google-calendar')
+    .map((t) => `- "${t.title}" (${t.estimatedHours}h, ${t.category})${t.deadline ? ` deadline: ${t.deadline}` : ''}`)
     .join('\n');
 
-  // Build business context section
-  const contextParts: string[] = [];
+  const manualTasks = activeTasks
+    .filter((t) => t.source !== 'google-calendar')
+    .map((t, i) => `[M${i}] "${t.title}" | ${t.category} | urgency:${t.urgency}/5 | revenue:${t.revenueImpact}/5 | leverage:${t.leverage}/5 | founderOnly:${t.founderOnly} | ${t.estimatedHours}h | deadline:${t.deadline || 'none'}\n    ${t.description}`)
+    .join('\n');
 
-  if (settings.companyName) {
-    const desc = settings.companyDescription ? ` — ${settings.companyDescription}` : '';
-    contextParts.push(`Company: ${settings.companyName}${desc}`);
-  }
-  if (settings.companyStage) {
-    contextParts.push(`Stage: ${settings.companyStage}`);
-  }
-  if (settings.currentRevenue) {
-    contextParts.push(`Current revenue: ${settings.currentRevenue}`);
-  }
-  const goals = (settings.quarterlyGoals || []).filter((g) => g.trim());
-  if (goals.length > 0) {
-    contextParts.push(`Top quarterly goals:\n${goals.map((g, i) => `  ${i + 1}. ${g}`).join('\n')}`);
-  }
-  if (settings.biggestBottleneck) {
-    contextParts.push(`Biggest bottleneck right now: ${settings.biggestBottleneck}`);
-  }
-  if (settings.pipelineStatus) {
-    contextParts.push(`Sales pipeline status: ${settings.pipelineStatus}`);
-  }
-  if (settings.founderSuperpower) {
-    contextParts.push(`Founder's superpower (what only they can do): ${settings.founderSuperpower}`);
-  }
-  if (settings.avoidDelegate) {
-    contextParts.push(`What the founder should avoid / delegate: ${settings.avoidDelegate}`);
-  }
-
-  const businessContext = contextParts.length > 0
-    ? `\nBUSINESS CONTEXT:\n${contextParts.join('\n')}\n`
-    : '';
-
-  const prompt = `You are the ruthless chief of staff for ${settings.founderName}${settings.companyName ? `, founder of ${settings.companyName}` : ', a startup founder'}. They have only ${settings.deepWorkHours} hours of deep work per day.
+  const prompt = `You are the ruthless chief of staff for ${settings.founderName}${settings.companyName ? `, founder of ${settings.companyName}` : ', a startup founder'}. Today is ${today}. They have ${settings.deepWorkHours} hours of deep work capacity.
 ${businessContext}
-Your job: look at all pending tasks and decide:
-1. TOP 3 — the 3 highest-leverage tasks that ONLY the founder should do today, fitting within ${settings.deepWorkHours}h total
-2. NOT TODAY — tasks that matter but should wait
-3. OUTSOURCE — tasks someone else should handle
+CALENDAR TODAY (meetings/events — these are context, not deep work):
+${calendarEvents || 'No calendar events.'}
 
-Prioritization principles:
-- Tasks that directly advance the quarterly goals rank highest
-- Revenue-generating and unblocking tasks beat everything else
-- Lean into the founder's superpower — schedule tasks only they can do
-- Ruthlessly delegate or defer anything that doesn't require founder involvement
-- Factor in the current bottleneck — if a task helps break through it, prioritize it
-- Consider pipeline status — closing deals in final stage may be the highest leverage thing today
+EXISTING TASKS:
+${manualTasks || 'No manual tasks yet.'}
 
 AVAILABLE DELEGATES:
 ${delegateList}
 
-PENDING TASKS:
-${taskList}
+YOUR JOB: Based on the business context, quarterly goals, bottleneck, and pipeline — figure out what ${settings.founderName} should ACTUALLY work on today. Calendar meetings are just context (they'll happen regardless). The real question is: what should the founder do in their ${settings.deepWorkHours}h of deep work?
 
-Respond with ONLY valid JSON in this exact format (no markdown, no code fences):
+STEP 1: GENERATE 5-8 high-leverage strategic tasks the founder SHOULD consider today. These should come from:
+- Quarterly goals that need founder action
+- Pipeline deals that need founder involvement to close
+- Bottleneck-breaking work
+- Strategic decisions only the founder can make
+- Follow-ups from today's meetings
+- Revenue-generating activities
+Think like a world-class chief of staff who knows the business deeply.
+
+STEP 2: Combine generated tasks with any existing manual tasks, then select:
+- TOP 3: The 3 highest-leverage founder-only tasks (total ≤ ${settings.deepWorkHours}h)
+- OUTSOURCE: Tasks a delegate should handle
+- NOT TODAY: Everything else
+
+Respond with ONLY valid JSON (no markdown, no code fences):
 {
-  "decisions": [
+  "generated_tasks": [
     {
-      "index": 0,
-      "status": "top3",
-      "reasoning": "Why this is a top priority today",
-      "delegateTo": null
-    },
+      "title": "Short action-oriented title",
+      "description": "What specifically to do and why it matters",
+      "category": "sales|marketing|product|operations|finance|hiring",
+      "urgency": 4,
+      "revenueImpact": 5,
+      "leverage": 4,
+      "founderOnly": true,
+      "estimatedHours": 1
+    }
+  ],
+  "top3": [
     {
-      "index": 1,
-      "status": "outsource",
+      "title": "Task title (from generated or existing)",
+      "source": "generated|existing",
+      "existingIndex": null,
+      "reasoning": "Sharp 1-2 sentence explanation referencing business context"
+    }
+  ],
+  "outsource": [
+    {
+      "title": "Task title",
+      "source": "generated|existing",
+      "existingIndex": null,
       "reasoning": "Why delegate this",
-      "delegateTo": "Name of delegate"
+      "delegateTo": "Delegate name"
+    }
+  ],
+  "notToday": [
+    {
+      "title": "Task title",
+      "source": "generated|existing",
+      "existingIndex": null,
+      "reasoning": "Why defer"
     }
   ]
 }
 
 Rules:
-- status must be one of: "top3", "notToday", "outsource"
-- Maximum 3 tasks as "top3", and their total estimatedHours must be <= ${settings.deepWorkHours}
-- For "outsource" tasks, pick the best delegate from the list above
-- delegateTo is null for top3 and notToday
-- Give sharp, specific reasoning (1-2 sentences) that references business context — no fluff`;
+- top3 must have exactly 3 tasks, total estimatedHours ≤ ${settings.deepWorkHours}
+- Generated tasks should be SPECIFIC and ACTIONABLE (not "think about strategy" — instead "Draft pricing proposal for [specific deal]")
+- Reference real business context in all reasoning
+- For existing tasks, set existingIndex to the M-index number
+- Be ruthless — most things should be delegated or deferred`;
 
   try {
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [{ role: 'user', content: prompt }],
-      temperature: 0.3,
+      temperature: 0.4,
     });
 
     const content = completion.choices[0]?.message?.content;
@@ -122,32 +140,83 @@ Rules:
     }
 
     const parsed = JSON.parse(content);
-    const decisions: Array<{
-      index: number;
-      status: 'top3' | 'notToday' | 'outsource';
-      reasoning: string;
-      delegateTo: string | null;
-    }> = parsed.decisions;
 
-    const updatedTasks = inboxTasks.map((task, i) => {
-      const decision = decisions.find((d) => d.index === i);
-      if (!decision) return { ...task, status: 'notToday' as const, reasoning: 'Not evaluated by AI.' };
+    // Build the final task list
+    const manualTaskList = activeTasks.filter((t) => t.source !== 'google-calendar');
+    const finalTasks: Task[] = [];
 
-      const updated: Task = {
-        ...task,
-        status: decision.status,
-        reasoning: decision.reasoning,
-      };
-
-      if (decision.status === 'outsource' && decision.delegateTo) {
-        updated.delegateTo = decision.delegateTo;
-        updated.delegationBrief = `**Task:** ${task.title}\n\n**Assigned to:** ${decision.delegateTo}\n\n**Context:** ${task.description}\n\n**Category:** ${task.category}\n\n**Urgency:** ${task.urgency}/5 | **Revenue Impact:** ${task.revenueImpact}/5\n\n**Expected output:** Complete this task and report back with results.\n\n**Deadline:** ${task.deadline || 'No hard deadline — aim for this week.'}`;
-      }
-
-      return updated;
+    // Helper to create a task from AI-generated data
+    const makeTask = (gen: { title: string; description: string; category: string; urgency: number; revenueImpact: number; leverage: number; founderOnly: boolean; estimatedHours: number }): Task => ({
+      id: `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      title: gen.title,
+      description: gen.description,
+      category: gen.category as Task['category'],
+      urgency: gen.urgency,
+      revenueImpact: gen.revenueImpact,
+      leverage: gen.leverage,
+      founderOnly: gen.founderOnly,
+      estimatedHours: gen.estimatedHours,
+      status: 'inbox',
+      source: 'ai-generated',
+      createdAt: new Date().toISOString(),
     });
 
-    return NextResponse.json({ tasks: [...updatedTasks, ...doneTasks] });
+    // Map generated tasks by title for lookup
+    const generatedMap = new Map<string, Task>();
+    for (const gen of parsed.generated_tasks || []) {
+      const task = makeTask(gen);
+      generatedMap.set(gen.title, task);
+    }
+
+    // Process top3
+    for (const item of parsed.top3 || []) {
+      let task: Task;
+      if (item.source === 'existing' && item.existingIndex != null && manualTaskList[item.existingIndex]) {
+        task = { ...manualTaskList[item.existingIndex] };
+      } else {
+        task = generatedMap.get(item.title) || makeTask({ title: item.title, description: item.reasoning, category: 'operations', urgency: 4, revenueImpact: 4, leverage: 4, founderOnly: true, estimatedHours: 1 });
+      }
+      task.status = 'top3';
+      task.reasoning = item.reasoning;
+      finalTasks.push(task);
+    }
+
+    // Process outsource
+    for (const item of parsed.outsource || []) {
+      let task: Task;
+      if (item.source === 'existing' && item.existingIndex != null && manualTaskList[item.existingIndex]) {
+        task = { ...manualTaskList[item.existingIndex] };
+      } else {
+        task = generatedMap.get(item.title) || makeTask({ title: item.title, description: item.reasoning, category: 'operations', urgency: 3, revenueImpact: 3, leverage: 3, founderOnly: false, estimatedHours: 1 });
+      }
+      task.status = 'outsource';
+      task.reasoning = item.reasoning;
+      if (item.delegateTo) {
+        task.delegateTo = item.delegateTo;
+        task.delegationBrief = `**Task:** ${task.title}\n\n**Assigned to:** ${item.delegateTo}\n\n**Context:** ${task.description}\n\n**Why now:** ${item.reasoning}\n\n**Deadline:** ${task.deadline || 'This week.'}`;
+      }
+      finalTasks.push(task);
+    }
+
+    // Process notToday
+    for (const item of parsed.notToday || []) {
+      let task: Task;
+      if (item.source === 'existing' && item.existingIndex != null && manualTaskList[item.existingIndex]) {
+        task = { ...manualTaskList[item.existingIndex] };
+      } else {
+        task = generatedMap.get(item.title) || makeTask({ title: item.title, description: item.reasoning, category: 'operations', urgency: 2, revenueImpact: 2, leverage: 2, founderOnly: false, estimatedHours: 1 });
+      }
+      task.status = 'notToday';
+      task.reasoning = item.reasoning;
+      finalTasks.push(task);
+    }
+
+    // Keep calendar events as context (mark as notToday if not already categorized)
+    const calendarTasks = activeTasks
+      .filter((t) => t.source === 'google-calendar')
+      .map((t) => ({ ...t, status: 'notToday' as const, reasoning: 'Calendar event — happens regardless of prioritization.' }));
+
+    return NextResponse.json({ tasks: [...finalTasks, ...calendarTasks, ...doneTasks] });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json({ error: `OpenAI error: ${message}` }, { status: 500 });
