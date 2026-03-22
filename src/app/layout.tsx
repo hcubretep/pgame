@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import Nav from '@/components/Nav';
+import AuthProvider from '@/components/AuthProvider';
 import { TaskProvider } from '@/context/TaskContext';
 
 const inter = Inter({ subsets: ['latin'] });
@@ -19,10 +20,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={`${inter.className} bg-zinc-50 text-zinc-900 antialiased`}>
-        <TaskProvider>
-          <Nav />
-          <main className="mx-auto max-w-3xl px-6 py-8">{children}</main>
-        </TaskProvider>
+        <AuthProvider>
+          <TaskProvider>
+            <Nav />
+            <main className="mx-auto max-w-3xl px-6 py-8">{children}</main>
+          </TaskProvider>
+        </AuthProvider>
       </body>
     </html>
   );
