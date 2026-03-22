@@ -5,7 +5,7 @@ import { useSession, signIn } from 'next-auth/react';
 import TaskCard from '@/components/TaskCard';
 
 export default function Dashboard() {
-  const { tasks, recalculate, recalculateWithAi, syncCalendar, isAiLoading, isSyncing, aiError, settings } = useTaskContext();
+  const { tasks, recalculate, recalculateWithAi, syncCalendar, isAiLoading, isSyncing, isLoading, aiError, settings } = useTaskContext();
   const { data: session } = useSession();
 
   const top3 = tasks.filter((t) => t.status === 'top3');
@@ -22,6 +22,14 @@ export default function Dashboard() {
   });
 
   const isEmpty = tasks.length === 0;
+
+  if (isLoading) {
+    return (
+      <div className="text-center py-16">
+        <p className="text-sm text-zinc-400">Loading your tasks...</p>
+      </div>
+    );
+  }
 
   return (
     <div>
