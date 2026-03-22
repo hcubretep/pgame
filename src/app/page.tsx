@@ -1,10 +1,12 @@
 'use client';
 
 import { useTaskContext } from '@/context/TaskContext';
+import { useSession, signIn } from 'next-auth/react';
 import TaskCard from '@/components/TaskCard';
 
 export default function Dashboard() {
   const { tasks, recalculate, recalculateWithAi, syncCalendar, isAiLoading, isSyncing, aiError, settings } = useTaskContext();
+  const { data: session } = useSession();
 
   const top3 = tasks.filter((t) => t.status === 'top3');
   const notToday = tasks.filter((t) => t.status === 'notToday');
@@ -67,14 +69,28 @@ export default function Dashboard() {
       {/* Empty state */}
       {isEmpty && (
         <div className="text-center py-16">
-          <p className="text-zinc-400 text-sm mb-4">No tasks yet. Pull in your week.</p>
-          <button
-            onClick={syncCalendar}
-            disabled={isSyncing}
-            className="text-sm px-4 py-2 rounded bg-zinc-900 text-white hover:bg-zinc-700 transition-colors disabled:opacity-50"
-          >
-            {isSyncing ? 'Syncing...' : 'Sync Google Calendar'}
-          </button>
+          {session ? (
+            <>
+              <p className="text-zinc-400 text-sm mb-4">No tasks yet. Pull in your week.</p>
+              <button
+                onClick={syncCalendar}
+                disabled={isSyncing}
+                className="text-sm px-4 py-2 rounded bg-zinc-900 text-white hover:bg-zinc-700 transition-colors disabled:opacity-50"
+              >
+                {isSyncing ? 'Syncing...' : 'Sync Google Calendar'}
+              </button>
+            </>
+          ) : (
+            <>
+              <p className="text-zinc-400 text-sm mb-4">Sign in to pull your calendar and get priorities.</p>
+              <button
+                onClick={() => signIn('google')}
+                className="text-sm px-4 py-2 rounded bg-zinc-900 text-white hover:bg-zinc-700 transition-colors"
+              >
+                Sign in with Google
+              </button>
+            </>
+          )}
         </div>
       )}
 

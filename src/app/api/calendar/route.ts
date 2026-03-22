@@ -1,4 +1,6 @@
 import { NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth/next';
+import { authOptions } from '@/lib/auth';
 import OpenAI from 'openai';
 import { Task } from '@/types';
 
@@ -52,30 +54,26 @@ interface CalendarEvent {
 function eventToTask(event: CalendarEvent): Task | null {
   const summary = event.summary || 'Untitled event';
 
-  // Skip cancelled events
   if (event.status === 'cancelled') return null;
-
-  // Skip personal/wellness blocks — these are not work tasks
   if (isPersonalBlock(summary)) return null;
 
   const startTime = event.start.dateTime || event.start.date || '';
   const endTime = event.end.dateTime || event.end.date || '';
 
-  // Calculate duration in hours
   let estimatedHours = 0.5;
   if (event.start.dateTime && event.end.dateTime) {
     const diffMs = new Date(endTime).getTime() - new Date(startTime).getTime();
-    estimatedHours = Math.round((diffMs / (1000 * 60 * 60)) * 4) / 4; // round to nearest 0.25
+    estimatedHours = Math.round((diffMs / (1000 * 60 * 60)) * 4) / 4;
   }
 
   const hasExternalAttendees = event.attendees?.some(
-    (a) => !a.email.includes('findableapp.com') && a.responseStatus !== 'declined'
+    (a) => a.responseStatus !== 'declined'
   );
 
   const description = [
     event.description ? event.description.slice(0, 300) : '',
     event.location ? `Location: ${event.location}` : '',
-    startTime ? `Time: ${new Date(startTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: 'Europe/Vienna' })}` : '',
+    startTime ? `Time: ${new Date(startTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })}` : '',
     event.attendees?.length ? `Attendees: ${event.attendees.map((a) => a.displayName || a.email).join(', ')}` : '',
   ]
     .filter(Boolean)
@@ -117,47 +115,57 @@ function guessSalesRelevance(summary: string, description: string): number {
 }
 
 export async function POST(req: Request) {
+  const session = await getServerSession(authOptions);
+
+  // If user is signed in with Google, use their token for real calendar data
+  if (session?.accessToken) {
+    if (session.error === 'RefreshAccessTokenError') {
+      return NextResponse.json(
+        { error: 'Google session expired. Please sign out and sign in again.' },
+        { status: 401 }
+      );
+    }
+
+    try {
+      const { calendarId = 'primary' } = await req.json();
+
+      const now = new Date();
+      const todayStart = new Date(now);
+      todayStart.setHours(0, 0, 0, 0);
+      const weekEnd = new Date(todayStart);
+      weekEnd.setDate(weekEnd.getDate() + 7);
+
+      const data = await fetchCalendarEvents(
+        session.accessToken,
+        calendarId,
+        todayStart.toISOString(),
+        weekEnd.toISOString()
+      );
+
+      const tasks: Task[] = (data.items || [])
+        .map((event: CalendarEvent) => eventToTask(event))
+        .filter((t: Task | null): t is Task => t !== null);
+
+      return NextResponse.json({ tasks, source: 'google-calendar' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Calendar sync failed';
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
+  }
+
+  // Not signed in — fall back to AI-generated tasks
   const apiKey = process.env.OPENAI_API_KEY;
-  const googleToken = process.env.GOOGLE_ACCESS_TOKEN;
-
-  // If no Google token, use GPT to generate realistic tasks from calendar context
-  if (!googleToken) {
-    // Fallback: generate tasks based on known context
-    return await generateTasksFromContext(apiKey);
-  }
-
-  try {
-    const { calendarId = 'primary' } = await req.json();
-
-    const now = new Date();
-    const todayStart = new Date(now);
-    todayStart.setHours(0, 0, 0, 0);
-    const weekEnd = new Date(todayStart);
-    weekEnd.setDate(weekEnd.getDate() + 7);
-
-    const data = await fetchCalendarEvents(
-      googleToken,
-      calendarId,
-      todayStart.toISOString(),
-      weekEnd.toISOString()
+  if (!apiKey) {
+    return NextResponse.json(
+      { error: 'Sign in with Google to sync your calendar, or configure OPENAI_API_KEY for AI-generated tasks.' },
+      { status: 401 }
     );
-
-    const tasks: Task[] = (data.items || [])
-      .map((event: CalendarEvent) => eventToTask(event))
-      .filter((t: Task | null): t is Task => t !== null);
-
-    return NextResponse.json({ tasks });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Calendar sync failed';
-    return NextResponse.json({ error: message }, { status: 500 });
   }
+
+  return await generateTasksFromContext(apiKey);
 }
 
-async function generateTasksFromContext(apiKey: string | undefined) {
-  if (!apiKey) {
-    return NextResponse.json({ error: 'Neither GOOGLE_ACCESS_TOKEN nor OPENAI_API_KEY configured' }, { status: 500 });
-  }
-
+async function generateTasksFromContext(apiKey: string) {
   const openai = new OpenAI({ apiKey });
 
   const today = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
@@ -167,9 +175,9 @@ async function generateTasksFromContext(apiKey: string | undefined) {
     messages: [
       {
         role: 'user',
-        content: `You are generating realistic tasks for Peter Buchroithner, Co-Founder & CEO of Findable (findableapp.com), an AI SEO startup based in Vienna, Austria.
+        content: `You are generating realistic tasks for a startup founder/CEO.
 
-Today is ${today}. Generate 6-8 realistic founder tasks for this week based on what a startup CEO running an AI/SEO product company would actually need to do. Mix of sales, marketing, product, operations.
+Today is ${today}. Generate 6-8 realistic founder tasks for this week based on what a startup CEO would actually need to do. Mix of sales, marketing, product, operations.
 
 Respond with ONLY valid JSON (no markdown, no code fences):
 {
