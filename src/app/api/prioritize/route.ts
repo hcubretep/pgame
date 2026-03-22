@@ -133,6 +133,8 @@ Respond with ONLY valid JSON (no markdown, no code fences):
 
 Rules:
 - top3 must have exactly 3 tasks, total estimatedHours ≤ ${settings.deepWorkHours}
+- EVERY generated task must appear in exactly one of: top3, outsource, or notToday — no task should be missing
+- outsource and notToday should each have at least 2-3 tasks
 - Generated tasks should be SPECIFIC and ACTIONABLE (not vague — use real names, deals, channels from the context)
 - Slack action items from team members should be weighed seriously — they represent live operational needs
 - Reference real business context in all reasoning
@@ -220,6 +222,25 @@ Rules:
       task.status = 'notToday';
       task.reasoning = item.reasoning;
       finalTasks.push(task);
+    }
+
+    // Catch any generated tasks that GPT didn't categorize
+    const usedTitles = new Set(finalTasks.map((t) => t.title));
+    for (const [title, task] of generatedMap) {
+      if (!usedTitles.has(title)) {
+        task.status = 'notToday';
+        task.reasoning = 'Generated but not prioritized — consider for another day.';
+        finalTasks.push(task);
+      }
+    }
+
+    // Add any uncategorized Slack tasks
+    const usedSlackTitles = new Set(finalTasks.filter(t => t.source === 'slack').map(t => t.title.toLowerCase().slice(0, 20)));
+    for (const st of slackTaskList) {
+      const prefix = st.title.toLowerCase().slice(0, 20);
+      if (!usedSlackTitles.has(prefix)) {
+        finalTasks.push({ ...st, status: 'notToday', reasoning: 'Slack action item — not prioritized for today.' });
+      }
     }
 
     // Keep calendar events as context
