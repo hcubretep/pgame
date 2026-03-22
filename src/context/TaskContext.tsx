@@ -2,16 +2,18 @@
 
 import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
 import { Task, Settings } from '@/types';
-import { mockTasks, mockSettings } from '@/lib/mockData';
+import { mockSettings } from '@/lib/mockData';
 import { prioritizeTasks, generateDelegationBrief, findBestDelegate } from '@/lib/scoring';
 
 interface TaskContextType {
   tasks: Task[];
   settings: Settings;
   isAiLoading: boolean;
+  isSyncing: boolean;
   aiError: string | null;
   recalculate: () => void;
   recalculateWithAi: () => Promise<void>;
+  syncCalendar: () => Promise<void>;
   moveTask: (taskId: string, newStatus: Task['status']) => void;
   addTask: (task: Omit<Task, 'id' | 'createdAt' | 'status'>) => void;
   updateSettings: (settings: Partial<Settings>) => void;
@@ -22,10 +24,9 @@ const TaskContext = createContext<TaskContextType | null>(null);
 
 export function TaskProvider({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<Settings>(mockSettings);
-  const [tasks, setTasks] = useState<Task[]>(() =>
-    prioritizeTasks(mockTasks, mockSettings.deepWorkHours, mockSettings.delegates)
-  );
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [isAiLoading, setIsAiLoading] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
 
   const recalculate = useCallback(() => {
@@ -40,7 +41,6 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     setIsAiLoading(true);
     setAiError(null);
 
-    // Reset tasks to inbox first
     const resetTasks = tasks.map((t) => (t.status === 'done' ? t : { ...t, status: 'inbox' as const }));
 
     try {
@@ -60,12 +60,44 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       const message = err instanceof Error ? err.message : 'AI prioritization failed';
       setAiError(message);
-      // Fall back to local scoring
       setTasks(prioritizeTasks(resetTasks, settings.deepWorkHours, settings.delegates));
     } finally {
       setIsAiLoading(false);
     }
   }, [tasks, settings]);
+
+  const syncCalendar = useCallback(async () => {
+    setIsSyncing(true);
+    setAiError(null);
+
+    try {
+      const res = await fetch('/api/calendar', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ calendarId: 'primary' }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Calendar sync failed');
+      }
+
+      const data = await res.json();
+      const calendarTasks: Task[] = data.tasks;
+
+      // Merge: keep manually added tasks, replace calendar tasks
+      setTasks((prev) => {
+        const manualTasks = prev.filter((t) => !t.id.startsWith('gcal_') && !t.id.startsWith('ai_'));
+        const merged = [...manualTasks, ...calendarTasks];
+        return prioritizeTasks(merged, settings.deepWorkHours, settings.delegates);
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Calendar sync failed';
+      setAiError(message);
+    } finally {
+      setIsSyncing(false);
+    }
+  }, [settings]);
 
   const moveTask = useCallback(
     (taskId: string, newStatus: Task['status']) => {
@@ -118,9 +150,11 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         tasks,
         settings,
         isAiLoading,
+        isSyncing,
         aiError,
         recalculate,
         recalculateWithAi,
+        syncCalendar,
         moveTask,
         addTask,
         updateSettings,
