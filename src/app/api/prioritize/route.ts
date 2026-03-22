@@ -18,7 +18,9 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ tasks: doneTasks });
   }
 
-  const delegateList = settings.delegates.map((d) => `${d.name} (${d.role}) — can handle: ${d.capabilities.join(', ')}`).join('\n');
+  const delegateList = settings.delegates.length > 0
+    ? settings.delegates.map((d) => `${d.name} (${d.role}) — can handle: ${d.capabilities.join(', ')}`).join('\n')
+    : 'No delegates configured.';
 
   const taskList = inboxTasks
     .map(
@@ -27,15 +29,54 @@ export async function POST(req: NextRequest) {
     )
     .join('\n');
 
-  const prompt = `You are a ruthless chief of staff for ${settings.founderName}, a startup founder with only ${settings.deepWorkHours} hours of deep work per day.
+  // Build business context section
+  const contextParts: string[] = [];
 
+  if (settings.companyName) {
+    const desc = settings.companyDescription ? ` — ${settings.companyDescription}` : '';
+    contextParts.push(`Company: ${settings.companyName}${desc}`);
+  }
+  if (settings.companyStage) {
+    contextParts.push(`Stage: ${settings.companyStage}`);
+  }
+  if (settings.currentRevenue) {
+    contextParts.push(`Current revenue: ${settings.currentRevenue}`);
+  }
+  const goals = (settings.quarterlyGoals || []).filter((g) => g.trim());
+  if (goals.length > 0) {
+    contextParts.push(`Top quarterly goals:\n${goals.map((g, i) => `  ${i + 1}. ${g}`).join('\n')}`);
+  }
+  if (settings.biggestBottleneck) {
+    contextParts.push(`Biggest bottleneck right now: ${settings.biggestBottleneck}`);
+  }
+  if (settings.pipelineStatus) {
+    contextParts.push(`Sales pipeline status: ${settings.pipelineStatus}`);
+  }
+  if (settings.founderSuperpower) {
+    contextParts.push(`Founder's superpower (what only they can do): ${settings.founderSuperpower}`);
+  }
+  if (settings.avoidDelegate) {
+    contextParts.push(`What the founder should avoid / delegate: ${settings.avoidDelegate}`);
+  }
+
+  const businessContext = contextParts.length > 0
+    ? `\nBUSINESS CONTEXT:\n${contextParts.join('\n')}\n`
+    : '';
+
+  const prompt = `You are the ruthless chief of staff for ${settings.founderName}${settings.companyName ? `, founder of ${settings.companyName}` : ', a startup founder'}. They have only ${settings.deepWorkHours} hours of deep work per day.
+${businessContext}
 Your job: look at all pending tasks and decide:
-1. TOP 3 — the 3 most important tasks that ONLY the founder should do today, fitting within ${settings.deepWorkHours}h total
+1. TOP 3 — the 3 highest-leverage tasks that ONLY the founder should do today, fitting within ${settings.deepWorkHours}h total
 2. NOT TODAY — tasks that matter but should wait
 3. OUTSOURCE — tasks someone else should handle
 
-Optimize for: revenue, leverage, urgency, strategic movement, and founder-only work.
-Be ruthless. If it's not founder-critical, delegate it. If it doesn't move the needle today, defer it.
+Prioritization principles:
+- Tasks that directly advance the quarterly goals rank highest
+- Revenue-generating and unblocking tasks beat everything else
+- Lean into the founder's superpower — schedule tasks only they can do
+- Ruthlessly delegate or defer anything that doesn't require founder involvement
+- Factor in the current bottleneck — if a task helps break through it, prioritize it
+- Consider pipeline status — closing deals in final stage may be the highest leverage thing today
 
 AVAILABLE DELEGATES:
 ${delegateList}
@@ -66,7 +107,7 @@ Rules:
 - Maximum 3 tasks as "top3", and their total estimatedHours must be <= ${settings.deepWorkHours}
 - For "outsource" tasks, pick the best delegate from the list above
 - delegateTo is null for top3 and notToday
-- Give sharp, specific reasoning (1-2 sentences) — no fluff`;
+- Give sharp, specific reasoning (1-2 sentences) that references business context — no fluff`;
 
   try {
     const completion = await openai.chat.completions.create({

@@ -159,24 +159,57 @@ interface SettingsRow {
   founder_name: string;
   deep_work_hours: number;
   delegates: Delegate[];
+  company_name: string;
+  company_description: string;
+  company_stage: string;
+  current_revenue: string;
+  quarterly_goals: string[];
+  biggest_bottleneck: string;
+  pipeline_status: string;
+  founder_superpower: string;
+  avoid_delegate: string;
 }
+
+const defaultSettings: Settings = {
+  founderName: 'Founder',
+  deepWorkHours: 3,
+  delegates: [],
+  companyName: '',
+  companyDescription: '',
+  companyStage: '',
+  currentRevenue: '',
+  quarterlyGoals: ['', '', ''],
+  biggestBottleneck: '',
+  pipelineStatus: '',
+  founderSuperpower: '',
+  avoidDelegate: '',
+};
 
 export async function getSettings(userId: string): Promise<Settings> {
   const { data } = await getSupabase()
     .from('user_settings')
-    .select('founder_name, deep_work_hours, delegates')
+    .select('founder_name, deep_work_hours, delegates, company_name, company_description, company_stage, current_revenue, quarterly_goals, biggest_bottleneck, pipeline_status, founder_superpower, avoid_delegate')
     .eq('user_id', userId)
     .single();
 
   if (!data) {
-    return { founderName: 'Founder', deepWorkHours: 3, delegates: [] };
+    return { ...defaultSettings };
   }
 
   const row = data as SettingsRow;
   return {
-    founderName: row.founder_name,
-    deepWorkHours: row.deep_work_hours,
+    founderName: row.founder_name || defaultSettings.founderName,
+    deepWorkHours: row.deep_work_hours ?? defaultSettings.deepWorkHours,
     delegates: row.delegates || [],
+    companyName: row.company_name || '',
+    companyDescription: row.company_description || '',
+    companyStage: row.company_stage || '',
+    currentRevenue: row.current_revenue || '',
+    quarterlyGoals: row.quarterly_goals || ['', '', ''],
+    biggestBottleneck: row.biggest_bottleneck || '',
+    pipelineStatus: row.pipeline_status || '',
+    founderSuperpower: row.founder_superpower || '',
+    avoidDelegate: row.avoid_delegate || '',
   };
 }
 
@@ -189,6 +222,15 @@ export async function saveSettings(userId: string, settings: Settings): Promise<
         founder_name: settings.founderName,
         deep_work_hours: settings.deepWorkHours,
         delegates: settings.delegates,
+        company_name: settings.companyName,
+        company_description: settings.companyDescription,
+        company_stage: settings.companyStage,
+        current_revenue: settings.currentRevenue,
+        quarterly_goals: settings.quarterlyGoals,
+        biggest_bottleneck: settings.biggestBottleneck,
+        pipeline_status: settings.pipelineStatus,
+        founder_superpower: settings.founderSuperpower,
+        avoid_delegate: settings.avoidDelegate,
       },
       { onConflict: 'user_id' }
     );

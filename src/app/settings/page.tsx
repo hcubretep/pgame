@@ -6,6 +6,20 @@ import { Delegate, TaskCategory } from '@/types';
 
 const allCategories: TaskCategory[] = ['sales', 'marketing', 'product', 'operations', 'finance', 'hiring'];
 
+const stageOptions = [
+  { value: '', label: 'Select stage...' },
+  { value: 'pre-revenue', label: 'Pre-revenue' },
+  { value: 'pre-seed', label: 'Pre-seed' },
+  { value: 'seed', label: 'Seed' },
+  { value: 'series-a', label: 'Series A' },
+  { value: 'growth', label: 'Growth' },
+];
+
+const inputClass =
+  'w-full border border-zinc-200 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400';
+const labelClass = 'block text-xs font-medium text-zinc-600 mb-1';
+const hintClass = 'text-xs text-zinc-400 mt-1';
+
 export default function SettingsPage() {
   const { settings, updateSettings } = useTaskContext();
   const [newDelegate, setNewDelegate] = useState({ name: '', role: '', capabilities: '' });
@@ -35,6 +49,12 @@ export default function SettingsPage() {
     });
   };
 
+  const updateGoal = (index: number, value: string) => {
+    const goals = [...(settings.quarterlyGoals || ['', '', ''])];
+    goals[index] = value;
+    updateSettings({ quarterlyGoals: goals });
+  };
+
   return (
     <div>
       <h1 className="text-xl font-semibold mb-8">Settings</h1>
@@ -43,16 +63,16 @@ export default function SettingsPage() {
         <h2 className="text-sm font-semibold text-zinc-900 mb-4">Founder Profile</h2>
         <div className="border border-zinc-200 rounded-lg p-4 bg-white space-y-4">
           <div>
-            <label className="block text-xs font-medium text-zinc-600 mb-1">Name</label>
+            <label className={labelClass}>Name</label>
             <input
               type="text"
               value={settings.founderName}
               onChange={(e) => updateSettings({ founderName: e.target.value })}
-              className="w-full border border-zinc-200 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400"
+              className={inputClass}
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-zinc-600 mb-1">
+            <label className={labelClass}>
               Deep work hours per day
             </label>
             <input
@@ -62,11 +82,134 @@ export default function SettingsPage() {
               step={0.5}
               value={settings.deepWorkHours}
               onChange={(e) => updateSettings({ deepWorkHours: parseFloat(e.target.value) })}
-              className="w-full border border-zinc-200 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-zinc-400"
+              className={inputClass}
             />
-            <p className="text-xs text-zinc-400 mt-1">
+            <p className={hintClass}>
               This caps how much deep work gets scheduled as your top 3.
             </p>
+          </div>
+        </div>
+      </section>
+
+      <section className="mb-10">
+        <h2 className="text-sm font-semibold text-zinc-900 mb-4">Business Context</h2>
+        <p className="text-xs text-zinc-400 mb-4">
+          This context helps the AI make much better prioritization decisions for your specific situation.
+        </p>
+        <div className="border border-zinc-200 rounded-lg p-4 bg-white space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={labelClass}>Company name</label>
+              <input
+                type="text"
+                value={settings.companyName || ''}
+                onChange={(e) => updateSettings({ companyName: e.target.value })}
+                placeholder="Acme Inc."
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className={labelClass}>Current stage</label>
+              <select
+                value={settings.companyStage || ''}
+                onChange={(e) => updateSettings({ companyStage: e.target.value })}
+                className={inputClass}
+              >
+                {stageOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className={labelClass}>What does your company do?</label>
+            <input
+              type="text"
+              value={settings.companyDescription || ''}
+              onChange={(e) => updateSettings({ companyDescription: e.target.value })}
+              placeholder="AI-powered productivity tool for founders"
+              className={inputClass}
+            />
+          </div>
+
+          <div>
+            <label className={labelClass}>Current ARR / MRR</label>
+            <input
+              type="text"
+              value={settings.currentRevenue || ''}
+              onChange={(e) => updateSettings({ currentRevenue: e.target.value })}
+              placeholder="e.g. $15k MRR, $180k ARR, pre-revenue"
+              className={inputClass}
+            />
+          </div>
+
+          <div>
+            <label className={labelClass}>Top 3 goals this quarter</label>
+            <div className="space-y-2">
+              {[0, 1, 2].map((i) => (
+                <input
+                  key={i}
+                  type="text"
+                  value={(settings.quarterlyGoals || ['', '', ''])[i] || ''}
+                  onChange={(e) => updateGoal(i, e.target.value)}
+                  placeholder={
+                    i === 0
+                      ? 'e.g. Close first 10 enterprise customers'
+                      : i === 1
+                        ? 'e.g. Ship v2 with team features'
+                        : 'e.g. Raise seed round'
+                  }
+                  className={inputClass}
+                />
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <label className={labelClass}>Biggest bottleneck right now</label>
+            <textarea
+              value={settings.biggestBottleneck || ''}
+              onChange={(e) => updateSettings({ biggestBottleneck: e.target.value })}
+              placeholder="e.g. Can't close deals fast enough — demo-to-close cycle is 6 weeks"
+              rows={2}
+              className={inputClass}
+            />
+          </div>
+
+          <div>
+            <label className={labelClass}>Sales pipeline status</label>
+            <textarea
+              value={settings.pipelineStatus || ''}
+              onChange={(e) => updateSettings({ pipelineStatus: e.target.value })}
+              placeholder="e.g. 3 enterprise deals in final stage, 12 leads in nurture, 2 pilots running"
+              rows={2}
+              className={inputClass}
+            />
+          </div>
+
+          <div>
+            <label className={labelClass}>Your superpower — what only you can do</label>
+            <textarea
+              value={settings.founderSuperpower || ''}
+              onChange={(e) => updateSettings({ founderSuperpower: e.target.value })}
+              placeholder="e.g. Close enterprise deals, set product vision, recruit senior engineers"
+              rows={2}
+              className={inputClass}
+            />
+          </div>
+
+          <div>
+            <label className={labelClass}>What should be avoided / delegated</label>
+            <textarea
+              value={settings.avoidDelegate || ''}
+              onChange={(e) => updateSettings({ avoidDelegate: e.target.value })}
+              placeholder="e.g. Social media content, routine customer support, bookkeeping"
+              rows={2}
+              className={inputClass}
+            />
           </div>
         </div>
       </section>

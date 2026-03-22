@@ -23,6 +23,15 @@ export interface Settings {
   founderName: string;
   deepWorkHours: number;
   delegates: Delegate[];
+  companyName: string;
+  companyDescription: string;
+  companyStage: string;
+  currentRevenue: string;
+  quarterlyGoals: string[];
+  biggestBottleneck: string;
+  pipelineStatus: string;
+  founderSuperpower: string;
+  avoidDelegate: string;
 }
 
 export interface Delegate {

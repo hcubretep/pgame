@@ -12,6 +12,15 @@ export const mockSettings: Settings = {
   founderName: 'Peter',
   deepWorkHours: 3,
   delegates: mockDelegates,
+  companyName: '',
+  companyDescription: '',
+  companyStage: '',
+  currentRevenue: '',
+  quarterlyGoals: ['', '', ''],
+  biggestBottleneck: '',
+  pipelineStatus: '',
+  founderSuperpower: '',
+  avoidDelegate: '',
 };
 
 export const mockTasks: Task[] = [

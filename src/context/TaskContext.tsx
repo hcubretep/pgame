@@ -25,6 +25,15 @@ const defaultSettings: Settings = {
   founderName: 'Founder',
   deepWorkHours: 3,
   delegates: [],
+  companyName: '',
+  companyDescription: '',
+  companyStage: '',
+  currentRevenue: '',
+  quarterlyGoals: ['', '', ''],
+  biggestBottleneck: '',
+  pipelineStatus: '',
+  founderSuperpower: '',
+  avoidDelegate: '',
 };
 
 const TaskContext = createContext<TaskContextType | null>(null);
