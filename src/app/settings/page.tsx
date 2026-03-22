@@ -23,6 +23,48 @@ const hintClass = 'text-xs text-zinc-400 mt-1';
 export default function SettingsPage() {
   const { settings, updateSettings } = useTaskContext();
   const [newDelegate, setNewDelegate] = useState({ name: '', role: '', capabilities: '' });
+  const [newChannel, setNewChannel] = useState({ id: '', name: '' });
+  const [slackStatus, setSlackStatus] = useState<'checking' | 'connected' | 'not_connected'>('checking');
+
+  // Check Slack connection status
+  useState(() => {
+    fetch('/api/slack-sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ channels: [] }),
+    }).then((res) => {
+      if (res.status === 500) {
+        res.json().then((data) => {
+          if (data.error?.includes('SLACK_USER_TOKEN')) {
+            setSlackStatus('not_connected');
+          } else {
+            setSlackStatus('connected');
+          }
+        });
+      } else if (res.status === 400) {
+        // 400 means token exists but no channels — that's connected
+        setSlackStatus('connected');
+      } else {
+        setSlackStatus('connected');
+      }
+    }).catch(() => {
+      setSlackStatus('not_connected');
+    });
+  });
+
+  const addSlackChannel = () => {
+    if (!newChannel.id || !newChannel.name) return;
+    const existing = settings.slackChannels || [];
+    if (existing.some((c) => c.id === newChannel.id)) return;
+    updateSettings({ slackChannels: [...existing, { id: newChannel.id, name: newChannel.name }] });
+    setNewChannel({ id: '', name: '' });
+  };
+
+  const removeSlackChannel = (channelId: string) => {
+    updateSettings({
+      slackChannels: (settings.slackChannels || []).filter((c) => c.id !== channelId),
+    });
+  };
 
   const addDelegate = () => {
     if (!newDelegate.name || !newDelegate.role) return;
@@ -277,6 +319,88 @@ export default function SettingsPage() {
           >
             Add
           </button>
+        </div>
+      </section>
+
+      <section className="mb-10">
+        <h2 className="text-sm font-semibold text-zinc-900 mb-4">Slack Integration</h2>
+        <p className="text-xs text-zinc-400 mb-4">
+          Pull action items from Slack conversations. Requires a Slack User Token.
+        </p>
+        <div className="border border-zinc-200 rounded-lg p-4 bg-white space-y-4">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-zinc-600">Status:</span>
+            {slackStatus === 'checking' ? (
+              <span className="text-xs text-zinc-400">Checking...</span>
+            ) : slackStatus === 'connected' ? (
+              <span className="text-xs font-medium text-emerald-600 flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" />
+                Connected
+              </span>
+            ) : (
+              <span className="text-xs font-medium text-red-600 flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-red-400 inline-block" />
+                Not connected
+              </span>
+            )}
+          </div>
+
+          {slackStatus === 'not_connected' && (
+            <div className="p-3 rounded bg-amber-50 border border-amber-200">
+              <p className="text-xs text-amber-800">
+                Add <code className="bg-amber-100 px-1 py-0.5 rounded text-[11px]">SLACK_USER_TOKEN</code> to your environment variables to enable Slack sync.
+              </p>
+            </div>
+          )}
+
+          <div>
+            <label className={labelClass}>Channels to monitor</label>
+            <div className="space-y-2 mb-3">
+              {(settings.slackChannels || []).map((ch) => (
+                <div
+                  key={ch.id}
+                  className="flex items-center justify-between border border-zinc-100 rounded px-3 py-2 bg-zinc-50"
+                >
+                  <div>
+                    <span className="text-sm text-zinc-900">#{ch.name}</span>
+                    <span className="text-xs text-zinc-400 ml-2">{ch.id}</span>
+                  </div>
+                  <button
+                    onClick={() => removeSlackChannel(ch.id)}
+                    className="text-xs text-zinc-400 hover:text-red-500 transition-colors"
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+              {(settings.slackChannels || []).length === 0 && (
+                <p className="text-xs text-zinc-400">No channels configured.</p>
+              )}
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <input
+                type="text"
+                placeholder="Channel ID (e.g. C08EN3KMTN1)"
+                value={newChannel.id}
+                onChange={(e) => setNewChannel({ ...newChannel, id: e.target.value })}
+                className={inputClass}
+              />
+              <input
+                type="text"
+                placeholder="Channel name (e.g. general)"
+                value={newChannel.name}
+                onChange={(e) => setNewChannel({ ...newChannel, name: e.target.value })}
+                className={inputClass}
+              />
+            </div>
+            <button
+              onClick={addSlackChannel}
+              className="mt-2 text-xs px-3 py-1.5 rounded bg-zinc-900 text-white hover:bg-zinc-700 transition-colors"
+            >
+              Add Channel
+            </button>
+          </div>
         </div>
       </section>
 

@@ -21,6 +21,10 @@ export const mockSettings: Settings = {
   pipelineStatus: '',
   founderSuperpower: '',
   avoidDelegate: '',
+  slackChannels: [
+    { id: 'C0A9HBGVADP', name: 'straion-marketing' },
+    { id: 'G1GAGFVEW', name: 'founders' },
+  ],
 };
 
 export const mockTasks: Task[] = [

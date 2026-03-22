@@ -5,7 +5,7 @@ import { useSession, signIn } from 'next-auth/react';
 import TaskCard from '@/components/TaskCard';
 
 export default function Dashboard() {
-  const { tasks, recalculate, recalculateWithAi, syncCalendar, isAiLoading, isSyncing, isLoading, aiError, settings } = useTaskContext();
+  const { tasks, recalculate, recalculateWithAi, syncCalendar, syncSlack, isAiLoading, isSyncing, isSlackSyncing, isLoading, aiError, settings } = useTaskContext();
   const { data: session } = useSession();
 
   const top3 = tasks.filter((t) => t.status === 'top3');
@@ -51,6 +51,13 @@ export default function Dashboard() {
             className="text-xs px-3 py-1.5 rounded bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-50"
           >
             {isSyncing ? 'Syncing...' : 'Sync Calendar'}
+          </button>
+          <button
+            onClick={syncSlack}
+            disabled={isSlackSyncing}
+            className="text-xs px-3 py-1.5 rounded bg-purple-50 text-purple-700 hover:bg-purple-100 transition-colors disabled:opacity-50"
+          >
+            {isSlackSyncing ? 'Syncing...' : 'Sync Slack'}
           </button>
           <button
             onClick={recalculate}

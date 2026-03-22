@@ -11,7 +11,7 @@ export async function GET() {
 
   const user = await getUserByEmail(session.user.email);
   if (!user) {
-    return NextResponse.json({ settings: { founderName: 'Founder', deepWorkHours: 3, delegates: [], companyName: '', companyDescription: '', companyStage: '', currentRevenue: '', quarterlyGoals: ['', '', ''], biggestBottleneck: '', pipelineStatus: '', founderSuperpower: '', avoidDelegate: '' } });
+    return NextResponse.json({ settings: { founderName: 'Founder', deepWorkHours: 3, delegates: [], companyName: '', companyDescription: '', companyStage: '', currentRevenue: '', quarterlyGoals: ['', '', ''], biggestBottleneck: '', pipelineStatus: '', founderSuperpower: '', avoidDelegate: '', slackChannels: [{ id: 'C0A9HBGVADP', name: 'straion-marketing' }, { id: 'G1GAGFVEW', name: 'founders' }] } });
   }
 
   const settings = await getSettings(user.id);

@@ -168,6 +168,7 @@ interface SettingsRow {
   pipeline_status: string;
   founder_superpower: string;
   avoid_delegate: string;
+  slack_channels: Array<{ id: string; name: string }>;
 }
 
 const defaultSettings: Settings = {
@@ -183,12 +184,16 @@ const defaultSettings: Settings = {
   pipelineStatus: '',
   founderSuperpower: '',
   avoidDelegate: '',
+  slackChannels: [
+    { id: 'C0A9HBGVADP', name: 'straion-marketing' },
+    { id: 'G1GAGFVEW', name: 'founders' },
+  ],
 };
 
 export async function getSettings(userId: string): Promise<Settings> {
   const { data } = await getSupabase()
     .from('user_settings')
-    .select('founder_name, deep_work_hours, delegates, company_name, company_description, company_stage, current_revenue, quarterly_goals, biggest_bottleneck, pipeline_status, founder_superpower, avoid_delegate')
+    .select('founder_name, deep_work_hours, delegates, company_name, company_description, company_stage, current_revenue, quarterly_goals, biggest_bottleneck, pipeline_status, founder_superpower, avoid_delegate, slack_channels')
     .eq('user_id', userId)
     .single();
 
@@ -210,6 +215,7 @@ export async function getSettings(userId: string): Promise<Settings> {
     pipelineStatus: row.pipeline_status || '',
     founderSuperpower: row.founder_superpower || '',
     avoidDelegate: row.avoid_delegate || '',
+    slackChannels: row.slack_channels || defaultSettings.slackChannels,
   };
 }
 
@@ -231,6 +237,7 @@ export async function saveSettings(userId: string, settings: Settings): Promise<
         pipeline_status: settings.pipelineStatus,
         founder_superpower: settings.founderSuperpower,
         avoid_delegate: settings.avoidDelegate,
+        slack_channels: settings.slackChannels,
       },
       { onConflict: 'user_id' }
     );

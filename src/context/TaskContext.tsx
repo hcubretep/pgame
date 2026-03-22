@@ -15,6 +15,8 @@ interface TaskContextType {
   recalculate: () => void;
   recalculateWithAi: () => Promise<void>;
   syncCalendar: () => Promise<void>;
+  syncSlack: () => Promise<void>;
+  isSlackSyncing: boolean;
   moveTask: (taskId: string, newStatus: Task['status']) => void;
   addTask: (task: Omit<Task, 'id' | 'createdAt' | 'status'>) => void;
   updateSettings: (settings: Partial<Settings>) => void;
@@ -34,6 +36,10 @@ const defaultSettings: Settings = {
   pipelineStatus: '',
   founderSuperpower: '',
   avoidDelegate: '',
+  slackChannels: [
+    { id: 'C0A9HBGVADP', name: 'straion-marketing' },
+    { id: 'G1GAGFVEW', name: 'founders' },
+  ],
 };
 
 const TaskContext = createContext<TaskContextType | null>(null);
@@ -44,6 +50,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isSlackSyncing, setIsSlackSyncing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [aiError, setAiError] = useState<string | null>(null);
 
@@ -192,6 +199,40 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     }
   }, [settings, persistTasks]);
 
+  const syncSlack = useCallback(async () => {
+    setIsSlackSyncing(true);
+    setAiError(null);
+
+    try {
+      const res = await fetch('/api/slack-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channels: settings.slackChannels }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Slack sync failed');
+      }
+
+      const data = await res.json();
+      const slackTasks: Task[] = data.tasks;
+
+      setTasks((prev) => {
+        const nonSlackTasks = prev.filter((t) => !t.id.startsWith('slack_'));
+        const merged = [...nonSlackTasks, ...slackTasks];
+        const result = prioritizeTasks(merged, settings.deepWorkHours, settings.delegates);
+        persistTasks(result);
+        return result;
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Slack sync failed';
+      setAiError(message);
+    } finally {
+      setIsSlackSyncing(false);
+    }
+  }, [settings, persistTasks]);
+
   const moveTask = useCallback(
     (taskId: string, newStatus: Task['status']) => {
       setTasks((prev) => {
@@ -265,6 +306,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         recalculate,
         recalculateWithAi,
         syncCalendar,
+        syncSlack,
+        isSlackSyncing,
         moveTask,
         addTask,
         updateSettings,

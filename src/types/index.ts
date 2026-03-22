@@ -16,8 +16,9 @@ export interface Task {
   delegateTo?: string;
   delegationBrief?: string;
   reasoning?: string;
-  source?: string; // 'manual' | 'google-calendar' | 'ai-generated'
+  source?: string; // 'manual' | 'google-calendar' | 'ai-generated' | 'slack'
   gcalEventId?: string;
+  slackChannel?: string;
   createdAt: string;
 }
 
@@ -34,6 +35,7 @@ export interface Settings {
   pipelineStatus: string;
   founderSuperpower: string;
   avoidDelegate: string;
+  slackChannels: Array<{ id: string; name: string }>;
 }
 
 export interface Delegate {
