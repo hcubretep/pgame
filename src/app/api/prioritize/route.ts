@@ -65,7 +65,7 @@ ${calendarEvents || 'No calendar events.'}
 SLACK ACTION ITEMS (real requests from team — these need responses):
 ${slackTasks || 'No Slack action items.'}
 
-EXISTING TASKS:
+EXISTING TASKS FROM INBOX (user manually entered these — they are REAL tasks that MUST be considered):
 ${manualTasks || 'No manual tasks yet.'}
 
 AVAILABLE DELEGATES:
@@ -85,7 +85,7 @@ STEP 1: GENERATE 5-8 high-leverage strategic tasks the founder SHOULD consider t
 - Revenue-generating activities
 Think like a world-class chief of staff who knows the business deeply.
 
-STEP 2: Combine generated tasks with existing manual tasks AND relevant Slack action items, then select:
+STEP 2: Combine generated tasks with ALL existing inbox tasks AND relevant Slack action items, then select. IMPORTANT: Existing inbox tasks entered by the user MUST be categorized — do not ignore them. Use existingIndex (M0, M1, etc.) to reference them:
 - TOP 3: The 3 highest-leverage founder-only tasks (total ≤ ${settings.deepWorkHours}h)
 - OUTSOURCE: Tasks a delegate should handle (including Slack items that don't need founder)
 - NOT TODAY: Everything else
@@ -139,7 +139,9 @@ Rules:
 - Slack action items from team members should be weighed seriously — they represent live operational needs
 - Reference real business context in all reasoning
 - For existing tasks, set existingIndex to the M-index number
-- Be ruthless — most things should be delegated or deferred`;
+- Be ruthless — most things should be delegated or deferred
+- EVERY existing inbox task (M0, M1, M2...) MUST appear in exactly one category — do NOT skip any
+- Existing tasks should be PREFERRED over generated tasks when they match quarterly goals or are high-leverage`;
 
   try {
     const completion = await openai.chat.completions.create({
@@ -231,6 +233,18 @@ Rules:
         task.status = 'notToday';
         task.reasoning = 'Generated but not prioritized — consider for another day.';
         finalTasks.push(task);
+      }
+    }
+
+    // Add back any manual/inbox tasks that GPT didn't reference
+    const usedIds = new Set(finalTasks.map((t) => t.id));
+    for (const mt of manualTaskList) {
+      if (!usedIds.has(mt.id)) {
+        // Check if GPT referenced it by title match
+        const titleMatch = finalTasks.find((t) => t.title.toLowerCase() === mt.title.toLowerCase());
+        if (!titleMatch) {
+          finalTasks.push({ ...mt, status: 'notToday', reasoning: 'Existing task — not selected for today by AI.' });
+        }
       }
     }
 
