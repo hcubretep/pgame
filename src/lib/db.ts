@@ -77,16 +77,29 @@ export async function getTasksForUser(userId: string): Promise<Task[]> {
 }
 
 export async function saveTasks(userId: string, tasks: Task[]): Promise<void> {
-  // Delete existing non-done tasks and re-insert
-  await getSupabase()
-    .from('tasks')
-    .delete()
-    .eq('user_id', userId);
+  const supabase = getSupabase();
 
   if (tasks.length === 0) return;
 
+  const incomingIds = new Set(tasks.map((t) => t.id));
+
+  // Only remove tasks not in the incoming set (stale synced tasks)
+  // This prevents losing manual tasks the AI didn't return
+  const { data: existingRows } = await supabase
+    .from('tasks')
+    .select('id')
+    .eq('user_id', userId);
+
+  const idsToRemove = (existingRows || [])
+    .map((r: { id: string }) => r.id)
+    .filter((id: string) => !incomingIds.has(id));
+
+  if (idsToRemove.length > 0) {
+    await supabase.from('tasks').delete().in('id', idsToRemove);
+  }
+
   const rows = tasks.map((t) => ({
-    id: t.id.startsWith('gcal_') || t.id.startsWith('ai_') ? undefined : t.id,
+    id: t.id,
     user_id: userId,
     title: t.title,
     description: t.description,
@@ -101,11 +114,12 @@ export async function saveTasks(userId: string, tasks: Task[]): Promise<void> {
     delegate_to: t.delegateTo || null,
     delegation_brief: t.delegationBrief || null,
     reasoning: t.reasoning || null,
-    source: t.id.startsWith('gcal_') ? 'gcal' : t.id.startsWith('ai_') ? 'ai' : 'manual',
+    source: t.source || (t.id.startsWith('gcal_') ? 'gcal' : t.id.startsWith('ai') ? 'ai' : t.id.startsWith('slack_') ? 'slack' : 'manual'),
     gcal_event_id: t.id.startsWith('gcal_') ? t.id.replace('gcal_', '') : null,
   }));
 
-  const { error } = await getSupabase().from('tasks').insert(rows);
+  // Upsert: update existing tasks, insert new ones
+  const { error } = await supabase.from('tasks').upsert(rows, { onConflict: 'id' });
   if (error) throw new Error(`Failed to save tasks: ${error.message}`);
 }
 

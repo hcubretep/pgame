@@ -6,7 +6,7 @@ import TaskCard from '@/components/TaskCard';
 import CompletionToast from '@/components/CompletionToast';
 
 export default function Dashboard() {
-  const { tasks, recalculate, recalculateWithAi, syncCalendar, syncSlack, syncMsTodo, isAiLoading, isSyncing, isSlackSyncing, isMsTodoSyncing, isLoading, isAutoSyncing, aiError, settings } = useTaskContext();
+  const { tasks, recalculate, recalculateWithAi, syncCalendar, syncSlack, isAiLoading, isSyncing, isSlackSyncing, isLoading, isAutoSyncing, aiError, settings } = useTaskContext();
   const { data: session } = useSession();
 
   const top3 = tasks.filter((t) => t.status === 'top3');
@@ -76,13 +76,6 @@ export default function Dashboard() {
             className="text-xs px-3 py-1.5 rounded bg-purple-50 text-purple-700 hover:bg-purple-100 transition-colors disabled:opacity-50"
           >
             {isSlackSyncing ? 'Syncing...' : 'Sync Slack'}
-          </button>
-          <button
-            onClick={syncMsTodo}
-            disabled={isMsTodoSyncing}
-            className="text-xs px-3 py-1.5 rounded bg-green-50 text-green-700 hover:bg-green-100 transition-colors disabled:opacity-50"
-          >
-            {isMsTodoSyncing ? 'Syncing...' : 'Sync To Do'}
           </button>
           <button
             onClick={recalculate}
