@@ -219,6 +219,38 @@ export async function getSettings(userId: string): Promise<Settings> {
   };
 }
 
+export async function ensureSettings(userId: string, userName?: string | null): Promise<void> {
+  const { data } = await getSupabase()
+    .from('user_settings')
+    .select('user_id')
+    .eq('user_id', userId)
+    .single();
+
+  if (!data) {
+    const founderName = userName ? userName.split(' ')[0] : defaultSettings.founderName;
+    const { error } = await getSupabase()
+      .from('user_settings')
+      .insert({
+        user_id: userId,
+        founder_name: founderName,
+        deep_work_hours: defaultSettings.deepWorkHours,
+        delegates: defaultSettings.delegates,
+        company_name: '',
+        company_description: '',
+        company_stage: '',
+        current_revenue: '',
+        quarterly_goals: ['', '', ''],
+        biggest_bottleneck: '',
+        pipeline_status: '',
+        founder_superpower: '',
+        avoid_delegate: '',
+        slack_channels: defaultSettings.slackChannels,
+      });
+
+    if (error) console.error('Failed to ensure settings:', error.message);
+  }
+}
+
 export async function saveSettings(userId: string, settings: Settings): Promise<void> {
   const { error } = await getSupabase()
     .from('user_settings')

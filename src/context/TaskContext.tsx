@@ -1,9 +1,15 @@
 'use client';
 
-import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import { useSession } from 'next-auth/react';
 import { Task, Settings } from '@/types';
 import { prioritizeTasks, generateDelegationBrief, findBestDelegate } from '@/lib/scoring';
+
+interface CompletionEvent {
+  count: number;
+  total: number;
+  message: string;
+}
 
 interface TaskContextType {
   tasks: Task[];
@@ -11,12 +17,16 @@ interface TaskContextType {
   isAiLoading: boolean;
   isSyncing: boolean;
   isLoading: boolean;
+  isAutoSyncing: boolean;
   aiError: string | null;
+  completionEvent: CompletionEvent | null;
   recalculate: () => void;
   recalculateWithAi: () => Promise<void>;
   syncCalendar: () => Promise<void>;
   syncSlack: () => Promise<void>;
+  syncMsTodo: () => Promise<void>;
   isSlackSyncing: boolean;
+  isMsTodoSyncing: boolean;
   moveTask: (taskId: string, newStatus: Task['status']) => void;
   addTask: (task: Omit<Task, 'id' | 'createdAt' | 'status'>) => void;
   updateSettings: (settings: Partial<Settings>) => void;
@@ -42,6 +52,9 @@ const defaultSettings: Settings = {
   ],
 };
 
+const SYNC_STALE_MS = 4 * 60 * 60 * 1000; // 4 hours
+const LAST_SYNC_KEY = 'pgame_last_sync';
+
 const TaskContext = createContext<TaskContextType | null>(null);
 
 export function TaskProvider({ children }: { children: ReactNode }) {
@@ -51,8 +64,13 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const [isAiLoading, setIsAiLoading] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isSlackSyncing, setIsSlackSyncing] = useState(false);
+  const [isMsTodoSyncing, setIsMsTodoSyncing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAutoSyncing, setIsAutoSyncing] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [completionEvent, setCompletionEvent] = useState<CompletionEvent | null>(null);
+  const completionTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const hasAutoSynced = useRef(false);
 
   // Load tasks and settings from DB on auth
   useEffect(() => {
@@ -66,6 +84,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
     const currentSession = session;
     async function loadData() {
+      let loadedTasks: Task[] = [];
       try {
         const [tasksRes, settingsRes] = await Promise.all([
           fetch('/api/tasks'),
@@ -74,12 +93,16 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
         if (tasksRes.ok) {
           const { tasks: dbTasks } = await tasksRes.json();
-          setTasks(dbTasks || []);
+          loadedTasks = dbTasks || [];
+          setTasks(loadedTasks);
         }
 
         if (settingsRes.ok) {
           const { settings: dbSettings } = await settingsRes.json();
           if (dbSettings) {
+            if (dbSettings.founderName === 'Founder' && currentSession?.user?.name) {
+              dbSettings.founderName = currentSession.user.name.split(' ')[0];
+            }
             setSettings(dbSettings);
           } else if (currentSession?.user?.name) {
             setSettings((prev) => ({ ...prev, founderName: currentSession.user?.name || prev.founderName }));
@@ -89,6 +112,92 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         console.error('Failed to load data:', err);
       } finally {
         setIsLoading(false);
+      }
+
+      // Auto-sync if stale or empty
+      if (!hasAutoSynced.current && currentSession) {
+        hasAutoSynced.current = true;
+        const lastSync = localStorage.getItem(LAST_SYNC_KEY);
+        const lastSyncTime = lastSync ? parseInt(lastSync, 10) : 0;
+        const isStale = Date.now() - lastSyncTime > SYNC_STALE_MS;
+        const isEmpty = loadedTasks.length === 0;
+
+        if (isStale || isEmpty) {
+          setIsAutoSyncing(true);
+          try {
+            // Sync Calendar + Slack + MS Todo in parallel
+            const [calRes, slackRes, msTodoRes] = await Promise.allSettled([
+              fetch('/api/calendar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ calendarId: 'primary' }),
+              }).then(async (r) => {
+                if (!r.ok) return [];
+                const d = await r.json();
+                return (d.tasks || []) as Task[];
+              }),
+              fetch('/api/slack-sync', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ channels: defaultSettings.slackChannels }),
+              }).then(async (r) => {
+                if (!r.ok) return [];
+                const d = await r.json();
+                return (d.tasks || []) as Task[];
+              }),
+              fetch('/api/ms-todo', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+              }).then(async (r) => {
+                if (!r.ok) return [];
+                const d = await r.json();
+                return (d.tasks || []) as Task[];
+              }),
+            ]);
+
+            const calTasks = calRes.status === 'fulfilled' ? calRes.value : [];
+            const slackTasks = slackRes.status === 'fulfilled' ? slackRes.value : [];
+            const msTodoTasks = msTodoRes.status === 'fulfilled' ? msTodoRes.value : [];
+
+            // Merge: remove synced-source tasks from loaded, add fresh ones
+            const manualTasks = loadedTasks.filter(
+              (t) => !t.id.startsWith('gcal_') && !t.id.startsWith('ai_') && !t.id.startsWith('slack_') && !t.id.startsWith('mstodo_')
+            );
+            const merged = [...manualTasks, ...calTasks, ...slackTasks, ...msTodoTasks];
+            setTasks(merged);
+
+            // Now run AI prioritization on the merged set
+            try {
+              const aiRes = await fetch('/api/prioritize', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  tasks: merged.map((t) => (t.status === 'done' ? t : { ...t, status: 'inbox' as const })),
+                  settings: defaultSettings,
+                }),
+              });
+
+              if (aiRes.ok) {
+                const aiData = await aiRes.json();
+                setTasks(aiData.tasks);
+                // Persist
+                await fetch('/api/tasks', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ tasks: aiData.tasks }),
+                });
+              }
+            } catch (aiErr) {
+              console.error('Auto-sync AI prioritization failed:', aiErr);
+            }
+
+            localStorage.setItem(LAST_SYNC_KEY, Date.now().toString());
+          } catch (err) {
+            console.error('Auto-sync failed:', err);
+          } finally {
+            setIsAutoSyncing(false);
+          }
+        }
       }
     }
 
@@ -233,6 +342,39 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     }
   }, [settings, persistTasks]);
 
+  const syncMsTodo = useCallback(async () => {
+    setIsMsTodoSyncing(true);
+    setAiError(null);
+
+    try {
+      const res = await fetch('/api/ms-todo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Microsoft To Do sync failed');
+      }
+
+      const data = await res.json();
+      const msTodoTasks: Task[] = data.tasks;
+
+      setTasks((prev) => {
+        const nonMsTodoTasks = prev.filter((t) => !t.id.startsWith('mstodo_'));
+        const merged = [...nonMsTodoTasks, ...msTodoTasks];
+        const result = prioritizeTasks(merged, settings.deepWorkHours, settings.delegates);
+        persistTasks(result);
+        return result;
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Microsoft To Do sync failed';
+      setAiError(message);
+    } finally {
+      setIsMsTodoSyncing(false);
+    }
+  }, [settings, persistTasks]);
+
   const moveTask = useCallback(
     (taskId: string, newStatus: Task['status']) => {
       setTasks((prev) => {
@@ -249,6 +391,36 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           }
           return { ...t, status: newStatus };
         });
+
+        // Fire completion event when a top3 task is marked done
+        if (newStatus === 'done') {
+          const wasTop3 = prev.find((t) => t.id === taskId)?.status === 'top3';
+          if (wasTop3) {
+            // Count tasks that were originally top3 and are now done
+            const originalTop3Ids = prev.filter((t) => t.status === 'top3').map((t) => t.id);
+            const nowDoneFromTop3 = updated.filter(
+              (t) => t.status === 'done' && originalTop3Ids.includes(t.id)
+            ).length;
+            const total = 3;
+            const count = nowDoneFromTop3;
+            const messages: Record<number, string> = {
+              1: 'Crushed it! 1/3 done \u{1F4AA}',
+              2: 'On fire! 2/3 done \u{1F525}',
+              3: 'All 3 done \u2014 go have a coffee \u2615',
+            };
+            const message = messages[count] || `${count}/${total} done!`;
+
+            if (completionTimerRef.current) {
+              clearTimeout(completionTimerRef.current);
+            }
+            setCompletionEvent({ count, total, message });
+            completionTimerRef.current = setTimeout(() => {
+              setCompletionEvent(null);
+              completionTimerRef.current = null;
+            }, 3000);
+          }
+        }
+
         persistTasks(updated);
         return updated;
       });
@@ -302,12 +474,16 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         isAiLoading,
         isSyncing,
         isLoading,
+        isAutoSyncing,
         aiError,
+        completionEvent,
         recalculate,
         recalculateWithAi,
         syncCalendar,
         syncSlack,
+        syncMsTodo,
         isSlackSyncing,
+        isMsTodoSyncing,
         moveTask,
         addTask,
         updateSettings,

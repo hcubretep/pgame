@@ -226,7 +226,7 @@ Rules:
 
     // Catch any generated tasks that GPT didn't categorize
     const usedTitles = new Set(finalTasks.map((t) => t.title));
-    for (const [title, task] of generatedMap) {
+    for (const [title, task] of Array.from(generatedMap)) {
       if (!usedTitles.has(title)) {
         task.status = 'notToday';
         task.reasoning = 'Generated but not prioritized — consider for another day.';

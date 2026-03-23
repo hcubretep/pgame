@@ -2,6 +2,7 @@ import { NextAuthOptions } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 
 export const authOptions: NextAuthOptions = {
+  session: { strategy: 'jwt', maxAge: 30 * 24 * 60 * 60 },
   providers: [
     GoogleProvider({
       clientId: process.env.GOOGLE_CLIENT_ID!,
@@ -10,7 +11,6 @@ export const authOptions: NextAuthOptions = {
         params: {
           scope: 'openid email profile https://www.googleapis.com/auth/calendar.readonly',
           access_type: 'offline',
-          prompt: 'consent',
         },
       },
     }),
@@ -20,8 +20,9 @@ export const authOptions: NextAuthOptions = {
       // Upsert user in Supabase on every sign-in
       if (user.email) {
         try {
-          const { upsertUser } = await import('@/lib/db');
-          await upsertUser(user.email, user.name, user.image);
+          const { upsertUser, ensureSettings } = await import('@/lib/db');
+          const userId = await upsertUser(user.email, user.name, user.image);
+          await ensureSettings(userId, user.name);
         } catch (err) {
           console.error('Failed to upsert user:', err);
         }

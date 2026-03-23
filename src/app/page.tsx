@@ -3,9 +3,10 @@
 import { useTaskContext } from '@/context/TaskContext';
 import { useSession, signIn } from 'next-auth/react';
 import TaskCard from '@/components/TaskCard';
+import CompletionToast from '@/components/CompletionToast';
 
 export default function Dashboard() {
-  const { tasks, recalculate, recalculateWithAi, syncCalendar, syncSlack, isAiLoading, isSyncing, isSlackSyncing, isLoading, aiError, settings } = useTaskContext();
+  const { tasks, recalculate, recalculateWithAi, syncCalendar, syncSlack, syncMsTodo, isAiLoading, isSyncing, isSlackSyncing, isMsTodoSyncing, isLoading, isAutoSyncing, aiError, settings } = useTaskContext();
   const { data: session } = useSession();
 
   const top3 = tasks.filter((t) => t.status === 'top3');
@@ -27,6 +28,23 @@ export default function Dashboard() {
     return (
       <div className="text-center py-16">
         <p className="text-sm text-zinc-400">Loading your tasks...</p>
+      </div>
+    );
+  }
+
+  if (isAutoSyncing) {
+    return (
+      <div className="text-center py-24">
+        <div className="inline-flex flex-col items-center gap-4">
+          <div className="relative w-10 h-10">
+            <div className="absolute inset-0 rounded-full border-2 border-zinc-200" />
+            <div className="absolute inset-0 rounded-full border-2 border-t-zinc-900 animate-spin" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-zinc-700">Setting up your day...</p>
+            <p className="text-xs text-zinc-400 mt-1">Syncing calendar, Slack, and tasks, then prioritizing with AI</p>
+          </div>
+        </div>
       </div>
     );
   }
@@ -58,6 +76,13 @@ export default function Dashboard() {
             className="text-xs px-3 py-1.5 rounded bg-purple-50 text-purple-700 hover:bg-purple-100 transition-colors disabled:opacity-50"
           >
             {isSlackSyncing ? 'Syncing...' : 'Sync Slack'}
+          </button>
+          <button
+            onClick={syncMsTodo}
+            disabled={isMsTodoSyncing}
+            className="text-xs px-3 py-1.5 rounded bg-green-50 text-green-700 hover:bg-green-100 transition-colors disabled:opacity-50"
+          >
+            {isMsTodoSyncing ? 'Syncing...' : 'Sync To Do'}
           </button>
           <button
             onClick={recalculate}
@@ -114,6 +139,16 @@ export default function Dashboard() {
         <section className="mb-10">
           <div className="flex items-center gap-3 mb-4">
             <h2 className="text-sm font-semibold text-zinc-900">Your Top 3 Today</h2>
+            <div className="flex gap-1">
+              {[0, 1, 2].map((i) => (
+                <span
+                  key={i}
+                  className={`w-2 h-2 rounded-full ${
+                    i < done.length ? 'bg-emerald-400' : 'bg-zinc-200'
+                  }`}
+                />
+              ))}
+            </div>
             <span className="text-xs text-zinc-400">
               {totalHours}h / {settings.deepWorkHours}h budget
             </span>
@@ -180,6 +215,8 @@ export default function Dashboard() {
           </div>
         </section>
       )}
+
+      <CompletionToast />
     </div>
   );
 }
