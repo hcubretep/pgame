@@ -13,9 +13,69 @@ const categoryColors: Record<string, string> = {
   hiring: 'bg-cyan-50 text-cyan-700',
 };
 
+interface BabyStep {
+  title: string;
+  minutes: number;
+  isFirst: boolean;
+}
+
 export default function TaskCard({ task, showActions = true }: { task: Task; showActions?: boolean }) {
-  const { moveTask, getDelegationBrief } = useTaskContext();
+  const { moveTask, getDelegationBrief, settings } = useTaskContext();
   const [showBrief, setShowBrief] = useState(false);
+  const [babySteps, setBabySteps] = useState<BabyStep[] | null>(null);
+  const [energyTip, setEnergyTip] = useState<string | null>(null);
+  const [checkedSteps, setCheckedSteps] = useState<Set<number>>(new Set());
+  const [isBreakingDown, setIsBreakingDown] = useState(false);
+  const [breakdownError, setBreakdownError] = useState<string | null>(null);
+  const [showBabySteps, setShowBabySteps] = useState(false);
+
+  const handleBreakDown = async () => {
+    if (babySteps) {
+      setShowBabySteps(!showBabySteps);
+      return;
+    }
+
+    setIsBreakingDown(true);
+    setBreakdownError(null);
+
+    try {
+      const res = await fetch('/api/baby-steps', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: task.title,
+          description: task.description,
+          settings,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to break down task');
+      }
+
+      const data = await res.json();
+      setBabySteps(data.steps);
+      setEnergyTip(data.energyTip);
+      setShowBabySteps(true);
+    } catch (err) {
+      setBreakdownError(err instanceof Error ? err.message : 'Something went wrong');
+    } finally {
+      setIsBreakingDown(false);
+    }
+  };
+
+  const toggleStep = (index: number) => {
+    setCheckedSteps((prev) => {
+      const next = new Set(prev);
+      if (next.has(index)) {
+        next.delete(index);
+      } else {
+        next.add(index);
+      }
+      return next;
+    });
+  };
 
   return (
     <div className="border border-zinc-200 rounded-lg p-4 bg-white">
@@ -64,8 +124,69 @@ export default function TaskCard({ task, showActions = true }: { task: Task; sho
           <span className="text-xs text-zinc-400">{task.estimatedHours}h</span>
         </div>
       </div>
+
+      {/* Baby Steps Section */}
+      {showBabySteps && babySteps && (
+        <div className="mt-3 pt-3 border-t border-zinc-100">
+          {energyTip && (
+            <div className="mb-3 px-3 py-2 bg-amber-50 border border-amber-100 rounded-md">
+              <p className="text-[11px] text-amber-700">
+                <span className="font-semibold">Energy tip:</span> {energyTip}
+              </p>
+            </div>
+          )}
+          <div className="space-y-1.5">
+            {babySteps.map((step, i) => (
+              <label
+                key={i}
+                className={`flex items-start gap-2.5 px-3 py-2 rounded-md cursor-pointer transition-colors ${
+                  step.isFirst
+                    ? 'bg-emerald-50 border border-emerald-200'
+                    : 'bg-zinc-50 border border-zinc-100'
+                } ${checkedSteps.has(i) ? 'opacity-50' : ''}`}
+              >
+                <input
+                  type="checkbox"
+                  checked={checkedSteps.has(i)}
+                  onChange={() => toggleStep(i)}
+                  className="mt-0.5 rounded border-zinc-300 text-emerald-600 focus:ring-emerald-500"
+                />
+                <div className="flex-1 min-w-0">
+                  <span className={`text-xs ${checkedSteps.has(i) ? 'line-through text-zinc-400' : 'text-zinc-700'}`}>
+                    {step.title}
+                  </span>
+                  {step.isFirst && !checkedSteps.has(i) && (
+                    <span className="ml-1.5 text-[10px] font-medium text-emerald-600">
+                      Start here — this takes {step.minutes} min
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] text-zinc-400 shrink-0 mt-0.5">{step.minutes}m</span>
+              </label>
+            ))}
+          </div>
+          {babySteps.length > 0 && checkedSteps.size === babySteps.length && (
+            <div className="mt-2 px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-md text-center">
+              <p className="text-xs font-medium text-emerald-700">All steps done! Mark the task as complete?</p>
+              <button
+                onClick={() => moveTask(task.id, 'done')}
+                className="mt-1.5 text-[11px] px-3 py-1 rounded bg-emerald-600 text-white hover:bg-emerald-700 transition-colors"
+              >
+                Mark done
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {breakdownError && (
+        <div className="mt-2 px-3 py-2 bg-red-50 border border-red-100 rounded-md">
+          <p className="text-[11px] text-red-600">{breakdownError}</p>
+        </div>
+      )}
+
       {showActions && (
-        <div className="flex gap-2 mt-3 pt-3 border-t border-zinc-100">
+        <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-zinc-100">
           {task.status !== 'top3' && (
             <button
               onClick={() => moveTask(task.id, 'top3')}
@@ -98,6 +219,13 @@ export default function TaskCard({ task, showActions = true }: { task: Task; sho
               Done
             </button>
           )}
+          <button
+            onClick={handleBreakDown}
+            disabled={isBreakingDown}
+            className="text-[11px] px-2.5 py-1 rounded bg-violet-50 text-violet-700 hover:bg-violet-100 transition-colors disabled:opacity-50"
+          >
+            {isBreakingDown ? 'Breaking down...' : babySteps ? (showBabySteps ? 'Hide steps' : 'Show steps') : 'Break it down'}
+          </button>
         </div>
       )}
     </div>
