@@ -6,7 +6,7 @@ import TaskCard from '@/components/TaskCard';
 import CompletionToast from '@/components/CompletionToast';
 
 export default function Dashboard() {
-  const { tasks, recalculate, recalculateWithAi, syncCalendar, syncSlack, isAiLoading, isSyncing, isSlackSyncing, isLoading, isAutoSyncing, aiError, settings } = useTaskContext();
+  const { tasks, recalculate, recalculateWithAi, syncCalendar, syncSlack, isAiLoading, isSyncing, isSlackSyncing, isLoading, isAutoSyncing, syncProgress, aiError, settings } = useTaskContext();
   const { data: session } = useSession();
 
   const top3 = tasks.filter((t) => t.status === 'top3');
@@ -32,25 +32,32 @@ export default function Dashboard() {
     );
   }
 
-  if (isAutoSyncing) {
-    return (
-      <div className="text-center py-24">
-        <div className="inline-flex flex-col items-center gap-4">
-          <div className="relative w-10 h-10">
-            <div className="absolute inset-0 rounded-full border-2 border-zinc-200" />
-            <div className="absolute inset-0 rounded-full border-2 border-t-zinc-900 animate-spin" />
-          </div>
-          <div>
-            <p className="text-sm font-medium text-zinc-700">Setting up your day...</p>
-            <p className="text-xs text-zinc-400 mt-1">Syncing calendar, Slack, and tasks, then prioritizing with AI</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div>
+      {/* Sync progress bar — non-blocking, shows above tasks */}
+      {isAutoSyncing && syncProgress && (
+        <div className="mb-6 p-3 rounded-lg bg-zinc-50 border border-zinc-200">
+          <div className="flex items-center gap-3">
+            <div className="relative w-4 h-4 shrink-0">
+              <div className="absolute inset-0 rounded-full border-2 border-zinc-200" />
+              <div className="absolute inset-0 rounded-full border-2 border-t-zinc-900 animate-spin" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-medium text-zinc-600">{syncProgress.stage}</p>
+              <div className="mt-1.5 h-1 bg-zinc-200 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-zinc-900 rounded-full transition-all duration-500"
+                  style={{ width: `${(syncProgress.stepsCompleted / syncProgress.totalSteps) * 100}%` }}
+                />
+              </div>
+            </div>
+            <span className="text-[10px] text-zinc-400 shrink-0">
+              {syncProgress.stepsCompleted}/{syncProgress.totalSteps}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-end justify-between mb-8">
         <div>
