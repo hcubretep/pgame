@@ -59,7 +59,7 @@ const defaultSettings: Settings = {
   ],
 };
 
-const SYNC_STALE_MS = 4 * 60 * 60 * 1000; // 4 hours
+const SYNC_STALE_MS = 24 * 60 * 60 * 1000; // 24 hours — sync once per day max
 const LAST_SYNC_KEY = 'pgame_last_sync';
 
 const TaskContext = createContext<TaskContextType | null>(null);
@@ -123,14 +123,17 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       }
 
       // Auto-sync if stale or empty — progressive, non-blocking
+      // Use localStorage to prevent re-sync across tab switches
       if (!hasAutoSynced.current && currentSession) {
         hasAutoSynced.current = true;
         const lastSync = localStorage.getItem(LAST_SYNC_KEY);
         const lastSyncTime = lastSync ? parseInt(lastSync, 10) : 0;
         const isStale = Date.now() - lastSyncTime > SYNC_STALE_MS;
         const isEmpty = loadedTasks.length === 0;
+        // Never auto-sync if we synced recently (same session, different tab)
+        const recentlySynced = Date.now() - lastSyncTime < 60 * 60 * 1000 && lastSyncTime > 0;
 
-        if (isStale || isEmpty) {
+        if ((isStale || isEmpty) && !recentlySynced) {
           setIsAutoSyncing(true);
           const totalSteps = 4; // calendar, slack, ms-todo, AI prioritize
 
@@ -189,14 +192,22 @@ export function TaskProvider({ children }: { children: ReactNode }) {
             }
           } catch (e) { console.error('MS Todo sync failed:', e); }
 
-          // Step 4: AI Prioritize
-          setSyncProgress({ stage: 'AI is picking your top 3...', stepsCompleted: 3, totalSteps });
+          // Step 4: AI Prioritize — only if no tasks are already prioritized
+          const alreadyPrioritized = currentTasks.some(
+            (t) => t.status === 'top3' || t.status === 'notToday' || t.status === 'outsource'
+          );
+          setSyncProgress({ stage: alreadyPrioritized ? 'Updating with new items...' : 'AI is picking your top 3...', stepsCompleted: 3, totalSteps });
           try {
+            // If already prioritized, only reset inbox tasks — keep existing top3/notToday/outsource
+            const tasksForAi = alreadyPrioritized
+              ? currentTasks.map((t) => t.status === 'inbox' ? t : t)
+              : currentTasks.map((t) => (t.status === 'done' ? t : { ...t, status: 'inbox' as const }));
+
             const aiRes = await fetch('/api/prioritize', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                tasks: currentTasks.map((t) => (t.status === 'done' ? t : { ...t, status: 'inbox' as const })),
+                tasks: tasksForAi,
                 settings: defaultSettings,
               }),
             });
