@@ -329,21 +329,38 @@ export default function InboxPage() {
         )}
       </div>
 
-      {/* Done section (collapsed by default) */}
-      {filter === 'done' && doneTasks.length > 0 && (
-        <div className="mt-8">
+      {/* Done section — always shown at bottom, celebratory */}
+      {(filter === 'all' || filter === 'done') && doneTasks.length > 0 && (
+        <div className="mt-10">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="flex-1 h-px bg-zinc-100" />
+            <div className="flex items-center gap-2">
+              <span className="text-base">🏆</span>
+              <span className="text-xs font-semibold text-emerald-600">
+                {doneTasks.length} {doneTasks.length === 1 ? 'task' : 'tasks'} crushed
+              </span>
+            </div>
+            <div className="flex-1 h-px bg-zinc-100" />
+          </div>
           <div className="space-y-1">
             {doneTasks.map((task) => (
               <div
                 key={task.id}
-                className="flex items-center gap-3 px-4 py-3 border border-zinc-50 rounded-lg opacity-50"
+                className="group flex items-center gap-3 px-4 py-3 border border-zinc-50 rounded-lg hover:border-zinc-100 transition-all"
               >
                 <div className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center shrink-0">
                   <svg className="w-3 h-3 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                   </svg>
                 </div>
-                <span className="text-sm text-zinc-400 line-through">{task.title}</span>
+                <span className="text-sm text-zinc-400 line-through flex-1">{task.title}</span>
+                <button
+                  onClick={() => moveTask(task.id, 'inbox')}
+                  className="text-[10px] text-zinc-300 hover:text-zinc-500 opacity-0 group-hover:opacity-100 transition-all"
+                  title="Move back to inbox"
+                >
+                  ↩ undo
+                </button>
               </div>
             ))}
           </div>

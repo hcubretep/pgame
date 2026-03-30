@@ -1,13 +1,39 @@
 'use client';
 
+import { useState } from 'react';
 import { useTaskContext } from '@/context/TaskContext';
 import { useSession, signIn } from 'next-auth/react';
 import TaskCard from '@/components/TaskCard';
 import CompletionToast from '@/components/CompletionToast';
 
 export default function Dashboard() {
-  const { tasks, recalculate, recalculateWithAi, syncCalendar, syncSlack, isAiLoading, isSyncing, isSlackSyncing, isLoading, isAutoSyncing, syncProgress, aiError, settings } = useTaskContext();
+  const { tasks, recalculate, recalculateWithAi, syncCalendar, syncSlack, isAiLoading, isSyncing, isSlackSyncing, isLoading, isAutoSyncing, syncProgress, aiError, settings, showCheckin, dismissCheckin, addTask } = useTaskContext();
   const { data: session } = useSession();
+  const [checkinText, setCheckinText] = useState('');
+  const [checkinSubmitting, setCheckinSubmitting] = useState(false);
+
+  const handleCheckinSubmit = async () => {
+    const lines = checkinText.split('\n').filter((l) => l.trim());
+    if (lines.length === 0) { dismissCheckin(); return; }
+    setCheckinSubmitting(true);
+    for (const line of lines) {
+      addTask({
+        title: line.trim(),
+        description: 'Added from daily check-in',
+        category: 'operations',
+        urgency: 4,
+        revenueImpact: 4,
+        leverage: 4,
+        founderOnly: true,
+        estimatedHours: 1,
+      });
+    }
+    dismissCheckin();
+    setCheckinText('');
+    // Re-prioritize after a tick so React can process the new tasks
+    setTimeout(() => recalculateWithAi(), 100);
+    setCheckinSubmitting(false);
+  };
 
   const top3 = tasks.filter((t) => t.status === 'top3');
   const notToday = tasks.filter((t) => t.status === 'notToday');
@@ -103,6 +129,48 @@ export default function Dashboard() {
       {aiError && (
         <div className="mb-6 p-3 rounded bg-red-50 border border-red-200 text-xs text-red-700">
           {aiError}
+        </div>
+      )}
+
+      {/* Daily check-in card — appears once per day after AI prioritizes */}
+      {showCheckin && !isAutoSyncing && (
+        <div className="mb-8 border border-zinc-200 rounded-xl p-5 bg-white shadow-sm">
+          <div className="flex justify-between items-start mb-3">
+            <div>
+              <p className="font-semibold text-zinc-900">Your top 3 are set.</p>
+              <p className="text-sm text-zinc-400 mt-0.5">Anything else on your mind that should be in the mix?</p>
+            </div>
+            <button
+              onClick={dismissCheckin}
+              className="text-zinc-300 hover:text-zinc-500 transition-colors text-lg leading-none ml-4 mt-0.5"
+              aria-label="Dismiss"
+            >
+              ✕
+            </button>
+          </div>
+          <textarea
+            value={checkinText}
+            onChange={(e) => setCheckinText(e.target.value)}
+            placeholder={"One per line, e.g.\nFollow up with investor Tom\nReview Q2 roadmap before board call"}
+            className="w-full border border-zinc-200 rounded-lg p-3 text-sm text-zinc-800 placeholder-zinc-300 resize-none focus:outline-none focus:border-zinc-400 focus:ring-1 focus:ring-zinc-200 transition-all"
+            rows={3}
+            autoFocus
+          />
+          <div className="flex gap-2 mt-3 justify-end">
+            <button
+              onClick={dismissCheckin}
+              className="text-xs px-3 py-1.5 text-zinc-400 hover:text-zinc-600 transition-colors"
+            >
+              Nothing for now
+            </button>
+            <button
+              onClick={handleCheckinSubmit}
+              disabled={checkinSubmitting}
+              className="text-xs px-4 py-1.5 rounded-lg bg-zinc-900 text-white hover:bg-zinc-700 transition-colors disabled:opacity-50"
+            >
+              {checkinSubmitting ? 'Adding...' : 'Add to my day →'}
+            </button>
+          </div>
         </div>
       )}
 

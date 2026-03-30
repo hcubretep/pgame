@@ -27,6 +27,8 @@ interface TaskContextType {
   syncProgress: SyncProgress | null;
   aiError: string | null;
   completionEvent: CompletionEvent | null;
+  showCheckin: boolean;
+  dismissCheckin: () => void;
   recalculate: () => void;
   recalculateWithAi: () => Promise<void>;
   syncCalendar: () => Promise<void>;
@@ -59,8 +61,9 @@ const defaultSettings: Settings = {
   ],
 };
 
-const SYNC_STALE_MS = 24 * 60 * 60 * 1000; // 24 hours — sync once per day max
+const SYNC_STALE_MS = 24 * 60 * 60 * 1000; // 24 hours — calendar/slack sync once per day
 const LAST_SYNC_KEY = 'pgame_last_sync';
+const LAST_CHECKIN_KEY = 'pgame_last_checkin'; // tracks daily check-in
 
 const TaskContext = createContext<TaskContextType | null>(null);
 
@@ -77,6 +80,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const [syncProgress, setSyncProgress] = useState<SyncProgress | null>(null);
   const [aiError, setAiError] = useState<string | null>(null);
   const [completionEvent, setCompletionEvent] = useState<CompletionEvent | null>(null);
+  const [showCheckin, setShowCheckin] = useState(false);
   const completionTimerRef = useRef<NodeJS.Timeout | null>(null);
   const hasAutoSynced = useRef(false);
   // Track which user's data is loaded — prevents re-loading on OAuth token refresh
@@ -136,31 +140,30 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         setIsLoading(false);
       }
 
-      // Auto-sync if stale or empty — progressive, non-blocking
-      // Use localStorage to prevent re-sync across tab switches
+      // On every load: run AI prioritize to keep priorities fresh.
+      // Calendar/Slack sync runs at most once per 24h.
       if (!hasAutoSynced.current && currentSession) {
         hasAutoSynced.current = true;
+        setIsAutoSyncing(true);
+
         const lastSync = localStorage.getItem(LAST_SYNC_KEY);
         const lastSyncTime = lastSync ? parseInt(lastSync, 10) : 0;
         const isStale = Date.now() - lastSyncTime > SYNC_STALE_MS;
         const isEmpty = loadedTasks.length === 0;
-        // Never auto-sync if we synced recently (same session, different tab)
         const recentlySynced = Date.now() - lastSyncTime < 60 * 60 * 1000 && lastSyncTime > 0;
+        const needsFullSync = (isStale || isEmpty) && !recentlySynced;
 
-        if ((isStale || isEmpty) && !recentlySynced) {
-          setIsAutoSyncing(true);
-          const totalSteps = 4; // calendar, slack, ms-todo, AI prioritize
+        // Helper to merge synced tasks into current state
+        const mergeTasks = (current: Task[], newTasks: Task[], prefix: string): Task[] => {
+          const kept = current.filter((t) => !t.id.startsWith(prefix));
+          return [...kept, ...newTasks];
+        };
 
-          // Helper to merge synced tasks into current state
-          const mergeTasks = (current: Task[], newTasks: Task[], prefix: string): Task[] => {
-            const kept = current.filter((t) => !t.id.startsWith(prefix));
-            return [...kept, ...newTasks];
-          };
+        let currentTasks = [...loadedTasks];
 
-          let currentTasks = [...loadedTasks];
-
+        if (needsFullSync) {
           // Step 1: Calendar
-          setSyncProgress({ stage: 'Syncing calendar...', stepsCompleted: 0, totalSteps });
+          setSyncProgress({ stage: 'Syncing calendar...', stepsCompleted: 0, totalSteps: 4 });
           try {
             const r = await fetch('/api/calendar', {
               method: 'POST',
@@ -169,14 +172,13 @@ export function TaskProvider({ children }: { children: ReactNode }) {
             });
             if (r.ok) {
               const d = await r.json();
-              const calTasks = (d.tasks || []) as Task[];
-              currentTasks = mergeTasks(currentTasks, calTasks, 'gcal_');
+              currentTasks = mergeTasks(currentTasks, (d.tasks || []) as Task[], 'gcal_');
               setTasks(currentTasks);
             }
           } catch (e) { console.error('Calendar sync failed:', e); }
 
           // Step 2: Slack
-          setSyncProgress({ stage: 'Syncing Slack...', stepsCompleted: 1, totalSteps });
+          setSyncProgress({ stage: 'Syncing Slack...', stepsCompleted: 1, totalSteps: 4 });
           try {
             const r = await fetch('/api/slack-sync', {
               method: 'POST',
@@ -185,14 +187,13 @@ export function TaskProvider({ children }: { children: ReactNode }) {
             });
             if (r.ok) {
               const d = await r.json();
-              const slackTasks = (d.tasks || []) as Task[];
-              currentTasks = mergeTasks(currentTasks, slackTasks, 'slack_');
+              currentTasks = mergeTasks(currentTasks, (d.tasks || []) as Task[], 'slack_');
               setTasks(currentTasks);
             }
           } catch (e) { console.error('Slack sync failed:', e); }
 
           // Step 3: MS Todo
-          setSyncProgress({ stage: 'Syncing To Do...', stepsCompleted: 2, totalSteps });
+          setSyncProgress({ stage: 'Syncing To Do...', stepsCompleted: 2, totalSteps: 4 });
           try {
             const r = await fetch('/api/ms-todo', {
               method: 'POST',
@@ -200,44 +201,37 @@ export function TaskProvider({ children }: { children: ReactNode }) {
             });
             if (r.ok) {
               const d = await r.json();
-              const msTodoTasks = (d.tasks || []) as Task[];
-              currentTasks = mergeTasks(currentTasks, msTodoTasks, 'mstodo_');
+              currentTasks = mergeTasks(currentTasks, (d.tasks || []) as Task[], 'mstodo_');
               setTasks(currentTasks);
             }
           } catch (e) { console.error('MS Todo sync failed:', e); }
 
-          // Step 4: AI Prioritize — only if no tasks are already prioritized
-          const alreadyPrioritized = currentTasks.some(
-            (t) => t.status === 'top3' || t.status === 'notToday' || t.status === 'outsource'
-          );
-          setSyncProgress({ stage: alreadyPrioritized ? 'Updating with new items...' : 'AI is picking your top 3...', stepsCompleted: 3, totalSteps });
-          try {
-            // If already prioritized, only reset inbox tasks — keep existing top3/notToday/outsource
-            const tasksForAi = alreadyPrioritized
-              ? currentTasks
-              : currentTasks.map((t) => (t.status === 'done' ? t : { ...t, status: 'inbox' as const }));
+          localStorage.setItem(LAST_SYNC_KEY, Date.now().toString());
+        }
 
+        // AI Prioritize — runs on EVERY load to keep priorities fresh
+        // Reset all active tasks to inbox so AI re-evaluates with today's context
+        if (currentTasks.filter((t) => t.status !== 'done').length > 0) {
+          setSyncProgress({ stage: 'AI is setting your priorities...', stepsCompleted: 3, totalSteps: 4 });
+          try {
+            const tasksForAi = currentTasks.map((t) =>
+              t.status === 'done' ? t : { ...t, status: 'inbox' as const }
+            );
             const sentTaskIds = new Set(currentTasks.map((t) => t.id));
 
             const aiRes = await fetch('/api/prioritize', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                tasks: tasksForAi,
-                settings: defaultSettings,
-              }),
+              body: JSON.stringify({ tasks: tasksForAi, settings: defaultSettings }),
             });
             if (aiRes.ok) {
               const aiData = await aiRes.json();
-              // Merge AI results with any tasks added to React state DURING this sync
-              // (tasks the user added while sync was running won't be in sentTaskIds)
               setTasks((prev) => {
                 const addedDuringSync = prev.filter((t) => !sentTaskIds.has(t.id));
                 const merged = [...aiData.tasks, ...addedDuringSync];
                 currentTasks = merged;
                 return merged;
               });
-              // Persist AI results — saveTasks now protects manual tasks in DB
               await fetch('/api/tasks', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -245,11 +239,17 @@ export function TaskProvider({ children }: { children: ReactNode }) {
               });
             }
           } catch (e) { console.error('AI prioritization failed:', e); }
-
-          localStorage.setItem(LAST_SYNC_KEY, Date.now().toString());
-          setSyncProgress(null);
-          setIsAutoSyncing(false);
         }
+
+        // Show daily check-in once per day, after AI is done
+        const lastCheckin = localStorage.getItem(LAST_CHECKIN_KEY);
+        const todayStr = new Date().toDateString();
+        if (lastCheckin !== todayStr && currentTasks.filter((t) => t.status !== 'done').length > 0) {
+          setShowCheckin(true);
+        }
+
+        setSyncProgress(null);
+        setIsAutoSyncing(false);
       }
     }
 
@@ -595,6 +595,11 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     [persistSettings]
   );
 
+  const dismissCheckin = useCallback(() => {
+    localStorage.setItem(LAST_CHECKIN_KEY, new Date().toDateString());
+    setShowCheckin(false);
+  }, []);
+
   const getDelegationBrief = useCallback(
     (taskId: string): string => {
       const task = tasks.find((t) => t.id === taskId);
@@ -617,6 +622,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         syncProgress,
         aiError,
         completionEvent,
+        showCheckin,
+        dismissCheckin,
         recalculate,
         recalculateWithAi,
         syncCalendar,
