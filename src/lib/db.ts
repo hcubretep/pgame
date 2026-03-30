@@ -85,8 +85,9 @@ export async function saveTasks(userId: string, tasks: Task[]): Promise<void> {
 
   const incomingIds = new Set(tasks.map((t) => t.id));
 
-  // Only remove tasks not in the incoming set (stale synced tasks)
-  // This prevents losing manual tasks the AI didn't return
+  // Only remove SYNCED tasks not in the incoming set — NEVER delete manual tasks.
+  // Synced tasks have predictable ID prefixes; manual tasks have numeric or timestamp IDs.
+  const SYNCED_PREFIXES = ['gcal_', 'slack_', 'ai-', 'mstodo_'];
   const { data: existingRows } = await supabase
     .from('tasks')
     .select('id')
@@ -94,7 +95,7 @@ export async function saveTasks(userId: string, tasks: Task[]): Promise<void> {
 
   const idsToRemove = (existingRows || [])
     .map((r: { id: string }) => r.id)
-    .filter((id: string) => !incomingIds.has(id));
+    .filter((id: string) => !incomingIds.has(id) && SYNCED_PREFIXES.some((p) => id.startsWith(p)));
 
   if (idsToRemove.length > 0) {
     await supabase.from('tasks').delete().in('id', idsToRemove);

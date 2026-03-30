@@ -200,8 +200,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           try {
             // If already prioritized, only reset inbox tasks — keep existing top3/notToday/outsource
             const tasksForAi = alreadyPrioritized
-              ? currentTasks.map((t) => t.status === 'inbox' ? t : t)
+              ? currentTasks
               : currentTasks.map((t) => (t.status === 'done' ? t : { ...t, status: 'inbox' as const }));
+
+            const sentTaskIds = new Set(currentTasks.map((t) => t.id));
 
             const aiRes = await fetch('/api/prioritize', {
               method: 'POST',
@@ -213,12 +215,19 @@ export function TaskProvider({ children }: { children: ReactNode }) {
             });
             if (aiRes.ok) {
               const aiData = await aiRes.json();
-              currentTasks = aiData.tasks;
-              setTasks(currentTasks);
+              // Merge AI results with any tasks added to React state DURING this sync
+              // (tasks the user added while sync was running won't be in sentTaskIds)
+              setTasks((prev) => {
+                const addedDuringSync = prev.filter((t) => !sentTaskIds.has(t.id));
+                const merged = [...aiData.tasks, ...addedDuringSync];
+                currentTasks = merged;
+                return merged;
+              });
+              // Persist AI results — saveTasks now protects manual tasks in DB
               await fetch('/api/tasks', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tasks: currentTasks }),
+                body: JSON.stringify({ tasks: aiData.tasks }),
               });
             }
           } catch (e) { console.error('AI prioritization failed:', e); }
@@ -430,6 +439,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
 
   const moveTask = useCallback(
     (taskId: string, newStatus: Task['status']) => {
+      let delegateTo: string | undefined;
+      let delegationBrief: string | undefined;
+      let recurTask: Task | undefined;
+
       setTasks((prev) => {
         const taskBeingMoved = prev.find((t) => t.id === taskId);
 
@@ -437,6 +450,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           if (t.id !== taskId) return t;
           if (newStatus === 'outsource') {
             const delegate = findBestDelegate(t, settings.delegates);
+            delegateTo = delegate;
+            delegationBrief = generateDelegationBrief(t, delegate);
             return {
               ...t,
               status: newStatus,
@@ -456,7 +471,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           taskBeingMoved.recurrence !== 'none'
         ) {
           const nextDeadline = getNextRecurrenceDate(taskBeingMoved.recurrence, taskBeingMoved.deadline);
-          const nextTask: Task = {
+          recurTask = {
             id: `${Date.now()}_recur`,
             title: taskBeingMoved.title,
             description: taskBeingMoved.description,
@@ -472,14 +487,13 @@ export function TaskProvider({ children }: { children: ReactNode }) {
             source: taskBeingMoved.source,
             createdAt: new Date().toISOString(),
           };
-          withRecurrence = [...updated, nextTask];
+          withRecurrence = [...updated, recurTask];
         }
 
         // Fire completion event when a top3 task is marked done
         if (newStatus === 'done') {
           const wasTop3 = prev.find((t) => t.id === taskId)?.status === 'top3';
           if (wasTop3) {
-            // Count tasks that were originally top3 and are now done
             const originalTop3Ids = prev.filter((t) => t.status === 'top3').map((t) => t.id);
             const nowDoneFromTop3 = updated.filter(
               (t) => t.status === 'done' && originalTop3Ids.includes(t.id)
@@ -504,11 +518,29 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        persistTasks(withRecurrence);
         return withRecurrence;
       });
+
+      // Individual DB updates — don't touch other tasks
+      if (session) {
+        fetch('/api/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ taskId, status: newStatus, delegateTo, delegationBrief }),
+        }).catch((err) => console.error('Failed to update task status:', err));
+
+        // If a recurring task was spawned, insert it individually
+        if (recurTask) {
+          const taskToInsert = recurTask;
+          fetch('/api/tasks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ task: taskToInsert }),
+          }).catch((err) => console.error('Failed to save recurrence task:', err));
+        }
+      }
     },
-    [settings.delegates, persistTasks]
+    [settings.delegates, session]
   );
 
   const addTask = useCallback(
@@ -519,13 +551,18 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         status: 'inbox',
         createdAt: new Date().toISOString(),
       };
-      setTasks((prev) => {
-        const updated = [...prev, newTask];
-        persistTasks(updated);
-        return updated;
-      });
+      // Update in-memory state immediately
+      setTasks((prev) => [...prev, newTask]);
+      // Individual DB insert — only touches this one task, can't race with bulk syncs
+      if (session) {
+        fetch('/api/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ task: newTask }),
+        }).catch((err) => console.error('Failed to save task:', err));
+      }
     },
-    [persistTasks]
+    [session]
   );
 
   const updateSettings = useCallback(
