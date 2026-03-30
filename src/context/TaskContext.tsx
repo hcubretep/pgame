@@ -79,16 +79,28 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const [completionEvent, setCompletionEvent] = useState<CompletionEvent | null>(null);
   const completionTimerRef = useRef<NodeJS.Timeout | null>(null);
   const hasAutoSynced = useRef(false);
+  // Track which user's data is loaded — prevents re-loading on OAuth token refresh
+  const loadedForEmail = useRef<string | null>(null);
 
   // Load tasks and settings from DB on auth
   useEffect(() => {
     if (authStatus === 'loading') return;
     if (!session) {
+      // User signed out — clear state and reset load tracking
+      loadedForEmail.current = null;
+      hasAutoSynced.current = false;
       setIsLoading(false);
       setTasks([]);
       setSettings(defaultSettings);
       return;
     }
+
+    // Skip re-running if we already loaded for this user in this session.
+    // This prevents loadData from firing again when NextAuth refreshes the
+    // OAuth access token (which changes the session object reference).
+    const email = session.user?.email;
+    if (loadedForEmail.current === email) return;
+    loadedForEmail.current = email || null;
 
     const currentSession = session;
     async function loadData() {
@@ -102,7 +114,9 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         if (tasksRes.ok) {
           const { tasks: dbTasks } = await tasksRes.json();
           loadedTasks = dbTasks || [];
-          setTasks(loadedTasks);
+          // Only update state if DB returned tasks, OR if memory is already empty.
+          // This prevents a failed/empty DB response from wiping tasks already in memory.
+          setTasks((prev) => (loadedTasks.length > 0 || prev.length === 0) ? loadedTasks : prev);
         }
 
         if (settingsRes.ok) {
