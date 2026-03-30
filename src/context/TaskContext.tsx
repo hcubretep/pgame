@@ -573,7 +573,12 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ task: newTask }),
-        }).catch((err) => console.error('Failed to save task:', err));
+        }).then(async (res) => {
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            console.error('Failed to save task to DB:', res.status, err);
+          }
+        }).catch((err) => console.error('Failed to save task (network):', err));
       }
     },
     [session]
