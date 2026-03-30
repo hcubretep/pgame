@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useTaskContext } from '@/context/TaskContext';
-import { TaskCategory } from '@/types';
+import { TaskCategory, Task } from '@/types';
 
 const categoryColors: Record<string, string> = {
   sales: 'bg-blue-50 text-blue-700 border-blue-200',
@@ -17,9 +17,19 @@ const categories: TaskCategory[] = ['sales', 'marketing', 'product', 'operations
 
 type FilterType = 'all' | 'inbox' | 'top3' | 'notToday' | 'outsource' | 'done';
 
+type RecurrenceType = 'none' | 'daily' | 'weekdays' | 'weekly';
+
+const recurrenceOptions: { value: RecurrenceType; label: string }[] = [
+  { value: 'none', label: 'None' },
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekdays', label: 'Weekdays' },
+  { value: 'weekly', label: 'Weekly' },
+];
+
 export default function InboxPage() {
   const { tasks, addTask, moveTask } = useTaskContext();
   const [quickTitle, setQuickTitle] = useState('');
+  const [recurrence, setRecurrence] = useState<RecurrenceType>('none');
   const [filter, setFilter] = useState<FilterType>('all');
   const [expandedTask, setExpandedTask] = useState<string | null>(null);
   const [editingTask, setEditingTask] = useState<string | null>(null);
@@ -43,8 +53,10 @@ export default function InboxPage() {
       leverage: 3,
       founderOnly: false,
       estimatedHours: 0.5,
-    });
+      recurrence: recurrence === 'none' ? undefined : recurrence,
+    } as Omit<Task, 'id' | 'createdAt' | 'status'>);
     setQuickTitle('');
+    setRecurrence('none');
     inputRef.current?.focus();
   };
 
@@ -91,25 +103,46 @@ export default function InboxPage() {
 
       {/* Quick Add */}
       <form onSubmit={handleQuickAdd} className="mb-6">
-        <div className="flex items-center gap-3 border border-zinc-200 rounded-lg px-4 py-3 bg-white focus-within:border-zinc-400 focus-within:ring-1 focus-within:ring-zinc-200 transition-all">
-          <svg className="w-5 h-5 text-zinc-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-          </svg>
-          <input
-            ref={inputRef}
-            type="text"
-            value={quickTitle}
-            onChange={(e) => setQuickTitle(e.target.value)}
-            placeholder="Add a task... (press Enter)"
-            className="flex-1 text-sm bg-transparent outline-none placeholder-zinc-300"
-          />
+        <div className="border border-zinc-200 rounded-lg bg-white focus-within:border-zinc-400 focus-within:ring-1 focus-within:ring-zinc-200 transition-all">
+          <div className="flex items-center gap-3 px-4 py-3">
+            <svg className="w-5 h-5 text-zinc-300 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+            </svg>
+            <input
+              ref={inputRef}
+              type="text"
+              value={quickTitle}
+              onChange={(e) => setQuickTitle(e.target.value)}
+              placeholder="Add a task... (press Enter)"
+              className="flex-1 text-sm bg-transparent outline-none placeholder-zinc-300"
+            />
+            {quickTitle.trim() && (
+              <button
+                type="submit"
+                className="text-xs px-3 py-1 rounded bg-zinc-900 text-white hover:bg-zinc-700 transition-colors shrink-0"
+              >
+                Add
+              </button>
+            )}
+          </div>
           {quickTitle.trim() && (
-            <button
-              type="submit"
-              className="text-xs px-3 py-1 rounded bg-zinc-900 text-white hover:bg-zinc-700 transition-colors shrink-0"
-            >
-              Add
-            </button>
+            <div className="flex items-center gap-1.5 px-4 pb-3">
+              <span className="text-[10px] text-zinc-400 mr-0.5">Repeat:</span>
+              {recurrenceOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => setRecurrence(opt.value)}
+                  className={`text-[10px] px-2 py-0.5 rounded-full border transition-colors ${
+                    recurrence === opt.value
+                      ? 'bg-sky-600 border-sky-600 text-white'
+                      : 'border-zinc-200 text-zinc-500 hover:border-zinc-300 hover:text-zinc-700'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           )}
         </div>
       </form>
@@ -185,6 +218,11 @@ export default function InboxPage() {
                   <span className={`text-[10px] ${statusColors[task.status]}`}>
                     {statusLabels[task.status]}
                   </span>
+                  {task.recurrence && task.recurrence !== 'none' && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-sky-50 text-sky-600 border border-sky-100">
+                      ↻
+                    </span>
+                  )}
                   {task.source && task.source !== 'manual' && (
                     <span className="text-[10px] text-zinc-300">
                       {task.source === 'google-calendar' ? '📅' : task.source === 'slack' ? '💬' : task.source === 'ai-generated' ? '🤖' : ''}

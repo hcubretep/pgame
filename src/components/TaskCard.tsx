@@ -95,6 +95,11 @@ export default function TaskCard({ task, showActions = true }: { task: Task; sho
                 Due {new Date(task.deadline).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
               </span>
             )}
+            {task.recurrence && task.recurrence !== 'none' && (
+              <span className="text-[11px] px-1.5 py-0.5 rounded bg-sky-50 text-sky-600 border border-sky-100">
+                ↻ {task.recurrence}
+              </span>
+            )}
           </div>
           <h3 className="text-sm font-medium text-zinc-900 mb-1">{task.title}</h3>
           <p className="text-xs text-zinc-500 leading-relaxed">{task.description}</p>

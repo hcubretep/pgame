@@ -42,6 +42,7 @@ interface TaskRow {
   reasoning: string | null;
   source: string | null;
   gcal_event_id: string | null;
+  recurrence: string | null;
   created_at: string;
 }
 
@@ -61,6 +62,7 @@ function rowToTask(row: TaskRow): Task {
     delegateTo: row.delegate_to || undefined,
     delegationBrief: row.delegation_brief || undefined,
     reasoning: row.reasoning || undefined,
+    recurrence: (row.recurrence as Task['recurrence']) || 'none',
     createdAt: row.created_at,
   };
 }
@@ -116,6 +118,7 @@ export async function saveTasks(userId: string, tasks: Task[]): Promise<void> {
     reasoning: t.reasoning || null,
     source: t.source || (t.id.startsWith('gcal_') ? 'gcal' : t.id.startsWith('ai') ? 'ai' : t.id.startsWith('slack_') ? 'slack' : 'manual'),
     gcal_event_id: t.id.startsWith('gcal_') ? t.id.replace('gcal_', '') : null,
+    recurrence: t.recurrence || 'none',
   }));
 
   // Upsert: update existing tasks, insert new ones
@@ -159,6 +162,7 @@ export async function addTaskToDb(userId: string, task: Task): Promise<string> {
       deadline: task.deadline || null,
       status: task.status,
       source: 'manual',
+      recurrence: task.recurrence || 'none',
     })
     .select('id')
     .single();

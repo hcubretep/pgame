@@ -19,6 +19,7 @@ export interface Task {
   source?: string; // 'manual' | 'google-calendar' | 'ai-generated' | 'slack'
   gcalEventId?: string;
   slackChannel?: string;
+  recurrence?: 'none' | 'daily' | 'weekly' | 'weekdays';
   createdAt: string;
 }
 

@@ -393,9 +393,35 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     }
   }, [settings, persistTasks]);
 
+  const getNextRecurrenceDate = (recurrence: Task['recurrence'], fromDate?: string): string => {
+    const base = fromDate ? new Date(fromDate) : new Date();
+    // Work with local date components to avoid timezone shift
+    const d = new Date(base.getFullYear(), base.getMonth(), base.getDate());
+
+    if (recurrence === 'daily') {
+      d.setDate(d.getDate() + 1);
+    } else if (recurrence === 'weekly') {
+      d.setDate(d.getDate() + 7);
+    } else if (recurrence === 'weekdays') {
+      d.setDate(d.getDate() + 1);
+      // Skip to Monday if we land on Sat (6) or Sun (0)
+      while (d.getDay() === 0 || d.getDay() === 6) {
+        d.setDate(d.getDate() + 1);
+      }
+    }
+
+    // Return as YYYY-MM-DD
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
   const moveTask = useCallback(
     (taskId: string, newStatus: Task['status']) => {
       setTasks((prev) => {
+        const taskBeingMoved = prev.find((t) => t.id === taskId);
+
         const updated = prev.map((t) => {
           if (t.id !== taskId) return t;
           if (newStatus === 'outsource') {
@@ -409,6 +435,34 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           }
           return { ...t, status: newStatus };
         });
+
+        // If a recurring task is marked done, create a fresh copy for next occurrence
+        let withRecurrence = updated;
+        if (
+          newStatus === 'done' &&
+          taskBeingMoved &&
+          taskBeingMoved.recurrence &&
+          taskBeingMoved.recurrence !== 'none'
+        ) {
+          const nextDeadline = getNextRecurrenceDate(taskBeingMoved.recurrence, taskBeingMoved.deadline);
+          const nextTask: Task = {
+            id: `${Date.now()}_recur`,
+            title: taskBeingMoved.title,
+            description: taskBeingMoved.description,
+            category: taskBeingMoved.category,
+            urgency: taskBeingMoved.urgency,
+            revenueImpact: taskBeingMoved.revenueImpact,
+            leverage: taskBeingMoved.leverage,
+            founderOnly: taskBeingMoved.founderOnly,
+            estimatedHours: taskBeingMoved.estimatedHours,
+            status: 'inbox',
+            recurrence: taskBeingMoved.recurrence,
+            deadline: nextDeadline,
+            source: taskBeingMoved.source,
+            createdAt: new Date().toISOString(),
+          };
+          withRecurrence = [...updated, nextTask];
+        }
 
         // Fire completion event when a top3 task is marked done
         if (newStatus === 'done') {
@@ -439,8 +493,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        persistTasks(updated);
-        return updated;
+        persistTasks(withRecurrence);
+        return withRecurrence;
       });
     },
     [settings.delegates, persistTasks]
