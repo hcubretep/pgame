@@ -44,3 +44,10 @@ export interface Delegate {
   role: string;
   capabilities: TaskCategory[];
 }
+
+export interface UserStats {
+  totalXp: number;
+  level: number;
+  streakCount: number;
+  streakLastDate: string | null;
+}

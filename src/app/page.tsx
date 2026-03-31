@@ -5,9 +5,13 @@ import { useTaskContext } from '@/context/TaskContext';
 import { useSession, signIn } from 'next-auth/react';
 import TaskCard from '@/components/TaskCard';
 import CompletionToast from '@/components/CompletionToast';
+import LevelUpScreen from '@/components/LevelUpScreen';
+import XpFloat from '@/components/XpFloat';
+import { getXpProgress } from '@/lib/levels';
 
 export default function Dashboard() {
-  const { tasks, recalculate, recalculateWithAi, syncCalendar, syncSlack, isAiLoading, isSyncing, isSlackSyncing, isLoading, isAutoSyncing, syncProgress, aiError, settings, showCheckin, dismissCheckin, addTask } = useTaskContext();
+  const { tasks, recalculate, recalculateWithAi, syncCalendar, syncSlack, isAiLoading, isSyncing, isSlackSyncing, isLoading, isAutoSyncing, syncProgress, aiError, settings, userStats, showCheckin, dismissCheckin, addTask } = useTaskContext();
+  const xpProgress = getXpProgress(userStats.totalXp);
   const { data: session } = useSession();
   const [checkinText, setCheckinText] = useState('');
   const [checkinSubmitting, setCheckinSubmitting] = useState(false);
@@ -124,6 +128,23 @@ export default function Dashboard() {
             {isAiLoading ? 'Thinking...' : 'AI Prioritize'}
           </button>
         </div>
+      </div>
+
+      {/* XP Status Bar */}
+      <div className="mb-8 flex items-center gap-3">
+        <span className="text-xs font-semibold text-zinc-500 shrink-0">
+          Lv.{userStats.level} · {xpProgress.current.title}
+        </span>
+        <div className="flex-1 h-1.5 bg-zinc-100 rounded-full overflow-hidden">
+          <div
+            className="h-full bg-zinc-900 rounded-full transition-all duration-500"
+            style={{ width: `${xpProgress.progressPercent}%` }}
+          />
+        </div>
+        <span className="text-[11px] text-zinc-400 shrink-0 tabular-nums">
+          {userStats.totalXp.toLocaleString()} XP
+          {xpProgress.next && ` / ${xpProgress.next.xpRequired.toLocaleString()}`}
+        </span>
       </div>
 
       {aiError && (
@@ -285,6 +306,8 @@ export default function Dashboard() {
       )}
 
       <CompletionToast />
+      <XpFloat />
+      <LevelUpScreen />
     </div>
   );
 }

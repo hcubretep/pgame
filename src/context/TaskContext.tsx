@@ -2,8 +2,9 @@
 
 import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import { useSession } from 'next-auth/react';
-import { Task, Settings } from '@/types';
+import { Task, Settings, UserStats } from '@/types';
 import { prioritizeTasks, generateDelegationBrief, findBestDelegate } from '@/lib/scoring';
+import { XP_AWARDS, getLevelFromXp } from '@/lib/levels';
 
 interface CompletionEvent {
   count: number;
@@ -17,9 +18,21 @@ interface SyncProgress {
   totalSteps: number;
 }
 
+interface XpGainEvent {
+  amount: number;
+  isBonus: boolean;
+}
+
+interface LevelUpEvent {
+  newLevel: number;
+  title: string;
+  totalXp: number;
+}
+
 interface TaskContextType {
   tasks: Task[];
   settings: Settings;
+  userStats: UserStats;
   isAiLoading: boolean;
   isSyncing: boolean;
   isLoading: boolean;
@@ -27,6 +40,9 @@ interface TaskContextType {
   syncProgress: SyncProgress | null;
   aiError: string | null;
   completionEvent: CompletionEvent | null;
+  xpGainEvent: XpGainEvent | null;
+  levelUpEvent: LevelUpEvent | null;
+  dismissLevelUp: () => void;
   showCheckin: boolean;
   dismissCheckin: () => void;
   recalculate: () => void;
@@ -81,6 +97,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const [aiError, setAiError] = useState<string | null>(null);
   const [completionEvent, setCompletionEvent] = useState<CompletionEvent | null>(null);
   const [showCheckin, setShowCheckin] = useState(false);
+  const [userStats, setUserStats] = useState<UserStats>({ totalXp: 0, level: 1, streakCount: 0, streakLastDate: null });
+  const [xpGainEvent, setXpGainEvent] = useState<XpGainEvent | null>(null);
+  const [levelUpEvent, setLevelUpEvent] = useState<LevelUpEvent | null>(null);
+  const xpTimerRef = useRef<NodeJS.Timeout | null>(null);
   const completionTimerRef = useRef<NodeJS.Timeout | null>(null);
   const hasAutoSynced = useRef(false);
   // Track which user's data is loaded — prevents re-loading on OAuth token refresh
@@ -110,9 +130,10 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     async function loadData() {
       let loadedTasks: Task[] = [];
       try {
-        const [tasksRes, settingsRes] = await Promise.all([
+        const [tasksRes, settingsRes, xpRes] = await Promise.all([
           fetch('/api/tasks'),
           fetch('/api/settings'),
+          fetch('/api/xp'),
         ]);
 
         if (tasksRes.ok) {
@@ -133,6 +154,11 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           } else if (currentSession?.user?.name) {
             setSettings((prev) => ({ ...prev, founderName: currentSession.user?.name || prev.founderName }));
           }
+        }
+
+        if (xpRes.ok) {
+          const stats = await xpRes.json();
+          setUserStats(stats);
         }
       } catch (err) {
         console.error('Failed to load data:', err);
@@ -456,9 +482,12 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       let delegateTo: string | undefined;
       let delegationBrief: string | undefined;
       let recurTask: Task | undefined;
+      let oldStatus: Task['status'] | undefined;
+      let allTop3Cleared = false;
 
       setTasks((prev) => {
         const taskBeingMoved = prev.find((t) => t.id === taskId);
+        oldStatus = taskBeingMoved?.status;
 
         const updated = prev.map((t) => {
           if (t.id !== taskId) return t;
@@ -529,11 +558,51 @@ export function TaskProvider({ children }: { children: ReactNode }) {
               setCompletionEvent(null);
               completionTimerRef.current = null;
             }, 3000);
+
+            // Check if all top3 are now cleared
+            if (updated.filter((t) => t.status === 'top3').length === 0) {
+              allTop3Cleared = true;
+            }
           }
         }
 
         return withRecurrence;
       });
+
+      // Award XP for task completion
+      if (newStatus === 'done' && oldStatus && session) {
+        const baseXp =
+          oldStatus === 'top3'     ? XP_AWARDS.top3 :
+          oldStatus === 'outsource' ? XP_AWARDS.outsource :
+          oldStatus === 'notToday'  ? XP_AWARDS.notToday : 0;
+
+        const totalXp = baseXp + (allTop3Cleared ? XP_AWARDS.allTop3Bonus : 0);
+
+        if (totalXp > 0) {
+          fetch('/api/xp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ amount: totalXp }),
+          }).then(async (res) => {
+            if (!res.ok) return;
+            const data = await res.json();
+            setUserStats((prev) => ({ ...prev, totalXp: data.newTotal, level: data.newLevel }));
+
+            // Show XP float
+            if (xpTimerRef.current) clearTimeout(xpTimerRef.current);
+            setXpGainEvent({ amount: totalXp, isBonus: allTop3Cleared });
+            xpTimerRef.current = setTimeout(() => {
+              setXpGainEvent(null);
+              xpTimerRef.current = null;
+            }, 2500);
+
+            // Show level-up screen
+            if (data.leveledUp) {
+              setLevelUpEvent({ newLevel: data.newLevel, title: getLevelFromXp(data.newTotal).title, totalXp: data.newTotal });
+            }
+          }).catch(() => {});
+        }
+      }
 
       // Individual DB updates — don't touch other tasks
       if (session) {
@@ -595,6 +664,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     [persistSettings]
   );
 
+  const dismissLevelUp = useCallback(() => setLevelUpEvent(null), []);
+
   const dismissCheckin = useCallback(() => {
     localStorage.setItem(LAST_CHECKIN_KEY, new Date().toDateString());
     setShowCheckin(false);
@@ -615,6 +686,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       value={{
         tasks,
         settings,
+        userStats,
         isAiLoading,
         isSyncing,
         isLoading,
@@ -622,6 +694,9 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         syncProgress,
         aiError,
         completionEvent,
+        xpGainEvent,
+        levelUpEvent,
+        dismissLevelUp,
         showCheckin,
         dismissCheckin,
         recalculate,

@@ -1,5 +1,6 @@
 import { getSupabase } from './supabase';
-import { Task, Settings, Delegate } from '@/types';
+import { Task, Settings, Delegate, UserStats } from '@/types';
+import { getLevelFromXp } from './levels';
 
 // --- Users ---
 
@@ -21,6 +22,43 @@ export async function getUserByEmail(email: string) {
     .eq('email', email)
     .single();
   return data;
+}
+
+export async function getUserStats(userId: string): Promise<UserStats> {
+  const { data } = await getSupabase()
+    .from('users')
+    .select('total_xp, level, streak_count, streak_last_date')
+    .eq('id', userId)
+    .single();
+
+  return {
+    totalXp: data?.total_xp ?? 0,
+    level: data?.level ?? 1,
+    streakCount: data?.streak_count ?? 0,
+    streakLastDate: data?.streak_last_date ?? null,
+  };
+}
+
+export async function awardXp(
+  userId: string,
+  amount: number
+): Promise<{ newTotal: number; newLevel: number; leveledUp: boolean }> {
+  const { data: current } = await getSupabase()
+    .from('users')
+    .select('total_xp, level')
+    .eq('id', userId)
+    .single();
+
+  const oldLevel = current?.level ?? 1;
+  const newTotal = (current?.total_xp ?? 0) + amount;
+  const newLevel = getLevelFromXp(newTotal).level;
+
+  await getSupabase()
+    .from('users')
+    .update({ total_xp: newTotal, level: newLevel })
+    .eq('id', userId);
+
+  return { newTotal, newLevel, leveledUp: newLevel > oldLevel };
 }
 
 // --- Tasks ---
