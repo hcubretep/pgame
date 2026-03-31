@@ -4,7 +4,7 @@ import { useTaskContext } from '@/context/TaskContext';
 import { getXpProgress } from '@/lib/levels';
 
 export default function LevelUpScreen() {
-  const { levelUpEvent, dismissLevelUp, userStats } = useTaskContext();
+  const { levelUpEvent, dismissLevelUp } = useTaskContext();
   if (!levelUpEvent) return null;
 
   const { current, next, progressXp, neededXp, progressPercent } = getXpProgress(levelUpEvent.totalXp);
