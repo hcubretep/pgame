@@ -21,6 +21,7 @@ interface SyncProgress {
 interface XpGainEvent {
   amount: number;
   isBonus: boolean;
+  streakCount: number | null;
 }
 
 interface LevelUpEvent {
@@ -582,15 +583,21 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           fetch('/api/xp', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ amount: totalXp }),
+            body: JSON.stringify({ amount: totalXp, perfectDay: allTop3Cleared }),
           }).then(async (res) => {
             if (!res.ok) return;
             const data = await res.json();
-            setUserStats((prev) => ({ ...prev, totalXp: data.newTotal, level: data.newLevel }));
+            setUserStats((prev) => ({
+              ...prev,
+              totalXp: data.newTotal,
+              level: data.newLevel,
+              ...(data.streakCount !== null ? { streakCount: data.streakCount } : {}),
+            }));
 
-            // Show XP float
+            // Show XP float (include streak bonus in displayed amount)
+            const displayXp = totalXp + (data.streakBonus ?? 0);
             if (xpTimerRef.current) clearTimeout(xpTimerRef.current);
-            setXpGainEvent({ amount: totalXp, isBonus: allTop3Cleared });
+            setXpGainEvent({ amount: displayXp, isBonus: allTop3Cleared, streakCount: data.streakCount });
             xpTimerRef.current = setTimeout(() => {
               setXpGainEvent(null);
               xpTimerRef.current = null;

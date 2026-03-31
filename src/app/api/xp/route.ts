@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
-import { getUserByEmail, getUserStats, awardXp } from '@/lib/db';
+import { getUserByEmail, getUserStats, awardXp, updateStreak } from '@/lib/db';
 import { getLevelFromXp } from '@/lib/levels';
 
 export async function GET() {
@@ -26,12 +26,21 @@ export async function POST(req: NextRequest) {
   const user = await getUserByEmail(session.user.email);
   if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
-  const { amount } = await req.json();
+  const { amount, perfectDay } = await req.json();
   if (!amount || amount <= 0) {
     return NextResponse.json({ error: 'Invalid amount' }, { status: 400 });
   }
 
-  const result = await awardXp(user.id, amount);
+  // On a perfect day (all Top 3 cleared), update streak and add streak bonus XP
+  let streakCount: number | null = null;
+  let streakBonus = 0;
+  if (perfectDay) {
+    const streak = await updateStreak(user.id);
+    streakCount = streak.newStreak;
+    streakBonus = streak.bonusXp;
+  }
+
+  const result = await awardXp(user.id, amount + streakBonus);
   const levelDef = getLevelFromXp(result.newTotal);
 
   return NextResponse.json({
@@ -39,5 +48,7 @@ export async function POST(req: NextRequest) {
     newLevel: result.newLevel,
     leveledUp: result.leveledUp,
     title: levelDef.title,
+    streakCount,
+    streakBonus,
   });
 }

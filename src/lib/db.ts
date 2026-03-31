@@ -39,6 +39,37 @@ export async function getUserStats(userId: string): Promise<UserStats> {
   };
 }
 
+export async function updateStreak(userId: string): Promise<{ newStreak: number; bonusXp: number }> {
+  const { data } = await getSupabase()
+    .from('users')
+    .select('streak_count, streak_last_date')
+    .eq('id', userId)
+    .single();
+
+  const today = new Date().toISOString().split('T')[0];
+  const lastDate = data?.streak_last_date as string | null;
+  const currentStreak = data?.streak_count ?? 0;
+
+  // Already updated today — don't double-count
+  if (lastDate === today) {
+    return { newStreak: currentStreak, bonusXp: Math.min(currentStreak * 10, 70) };
+  }
+
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().split('T')[0];
+
+  const newStreak = lastDate === yesterdayStr ? currentStreak + 1 : 1;
+  const bonusXp = Math.min(newStreak * 10, 70);
+
+  await getSupabase()
+    .from('users')
+    .update({ streak_count: newStreak, streak_last_date: today })
+    .eq('id', userId);
+
+  return { newStreak, bonusXp };
+}
+
 export async function awardXp(
   userId: string,
   amount: number

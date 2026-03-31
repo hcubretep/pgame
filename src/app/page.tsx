@@ -145,6 +145,11 @@ export default function Dashboard() {
           {userStats.totalXp.toLocaleString()} XP
           {xpProgress.next && ` / ${xpProgress.next.xpRequired.toLocaleString()}`}
         </span>
+        {userStats.streakCount > 0 && (
+          <span className="flex items-center gap-1 text-xs font-semibold text-orange-500 shrink-0">
+            🔥 {userStats.streakCount}
+          </span>
+        )}
       </div>
 
       {aiError && (
