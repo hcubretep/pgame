@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
-import { getUserByEmail, getUserStats, awardXp, updateStreak, awardSkillXp } from '@/lib/db';
+import { getUserByEmail, getUserStats, awardXp, updateStreak, awardSkillXp, logDailyActivity } from '@/lib/db';
 import { getLevelFromXp } from '@/lib/levels';
 
 export async function GET() {
@@ -47,6 +47,15 @@ export async function POST(req: NextRequest) {
   if (skillBranch) {
     await awardSkillXp(user.id, skillBranch, amount);
   }
+
+  // Log daily activity for weekly snapshot
+  await logDailyActivity(user.id, {
+    tasksCompleted: 1,
+    top3Cleared: !!perfectDay,
+    xpEarned: amount + streakBonus,
+    skillBranch: skillBranch || undefined,
+    branchXp: skillBranch ? amount : undefined,
+  });
 
   return NextResponse.json({
     newTotal: result.newTotal,

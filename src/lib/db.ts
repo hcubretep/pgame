@@ -1,5 +1,5 @@
 import { getSupabase } from './supabase';
-import { Task, Settings, Delegate, UserStats } from '@/types';
+import { Task, Settings, Delegate, UserStats, DailyLog, WeeklySnapshot } from '@/types';
 import { getLevelFromXp } from './levels';
 
 // --- Users ---
@@ -117,6 +117,104 @@ export async function awardXp(
     .eq('id', userId);
 
   return { newTotal, newLevel, leveledUp: newLevel > oldLevel };
+}
+
+// --- Daily Logs ---
+
+export async function logDailyActivity(
+  userId: string,
+  opts: {
+    tasksCompleted: number;
+    top3Cleared: boolean;
+    xpEarned: number;
+    skillBranch?: string;
+    branchXp?: number;
+  }
+): Promise<void> {
+  const supabase = getSupabase();
+  const today = new Date().toISOString().split('T')[0];
+
+  // Fetch existing log for today (if any)
+  const { data: existing } = await supabase
+    .from('daily_logs')
+    .select('tasks_completed, top3_cleared, xp_earned, skill_breakdown')
+    .eq('user_id', userId)
+    .eq('date', today)
+    .single();
+
+  const prevBreakdown: Record<string, number> = (existing?.skill_breakdown as Record<string, number>) || {};
+  const newBreakdown = { ...prevBreakdown };
+  if (opts.skillBranch && opts.branchXp) {
+    newBreakdown[opts.skillBranch] = (newBreakdown[opts.skillBranch] ?? 0) + opts.branchXp;
+  }
+
+  const row = {
+    user_id: userId,
+    date: today,
+    tasks_completed: (existing?.tasks_completed ?? 0) + opts.tasksCompleted,
+    top3_cleared: existing?.top3_cleared || opts.top3Cleared,
+    xp_earned: (existing?.xp_earned ?? 0) + opts.xpEarned,
+    skill_breakdown: newBreakdown,
+  };
+
+  await supabase.from('daily_logs').upsert(row, { onConflict: 'user_id,date' });
+}
+
+export async function getWeeklySnapshot(userId: string): Promise<WeeklySnapshot> {
+  // Pull last 7 days of logs
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const since = sevenDaysAgo.toISOString().split('T')[0];
+
+  const { data } = await getSupabase()
+    .from('daily_logs')
+    .select('date, tasks_completed, top3_cleared, xp_earned, skill_breakdown')
+    .eq('user_id', userId)
+    .gte('date', since)
+    .order('date', { ascending: true });
+
+  const logs: DailyLog[] = (data || []).map((row) => ({
+    date: row.date,
+    tasksCompleted: row.tasks_completed,
+    top3Cleared: row.top3_cleared,
+    xpEarned: row.xp_earned,
+    skillBreakdown: (row.skill_breakdown as DailyLog['skillBreakdown']) || {},
+  }));
+
+  const xpEarned = logs.reduce((s, l) => s + l.xpEarned, 0);
+  const tasksCompleted = logs.reduce((s, l) => s + l.tasksCompleted, 0);
+  const perfectDays = logs.filter((l) => l.top3Cleared).length;
+  const workingDays = logs.length;
+
+  // Aggregate skill XP across the week
+  const skillTotals: Record<string, number> = {};
+  for (const log of logs) {
+    for (const [branch, xp] of Object.entries(log.skillBreakdown)) {
+      skillTotals[branch] = (skillTotals[branch] ?? 0) + (xp as number);
+    }
+  }
+
+  const skillEntries = Object.entries(skillTotals).sort((a, b) => b[1] - a[1]);
+  const topSkill = skillEntries.length > 0 ? { branch: skillEntries[0][0], xp: skillEntries[0][1] } : null;
+  const weakestSkill = skillEntries.length > 1 ? { branch: skillEntries[skillEntries.length - 1][0], xp: skillEntries[skillEntries.length - 1][1] } : null;
+
+  // Get current streak from user record
+  const { data: userData } = await getSupabase()
+    .from('users')
+    .select('streak_count')
+    .eq('id', userId)
+    .single();
+
+  return {
+    xpEarned,
+    tasksCompleted,
+    perfectDays,
+    workingDays,
+    streakCount: userData?.streak_count ?? 0,
+    topSkill,
+    weakestSkill,
+    logs,
+  };
 }
 
 // --- Tasks ---

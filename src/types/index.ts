@@ -56,3 +56,22 @@ export interface UserStats {
   skillOperatorXp: number;
   skillVisionaryXp: number;
 }
+
+export interface DailyLog {
+  date: string;
+  tasksCompleted: number;
+  top3Cleared: boolean;
+  xpEarned: number;
+  skillBreakdown: Partial<Record<'builder' | 'grower' | 'operator' | 'visionary', number>>;
+}
+
+export interface WeeklySnapshot {
+  xpEarned: number;
+  tasksCompleted: number;
+  perfectDays: number;
+  workingDays: number;
+  streakCount: number;
+  topSkill: { branch: string; xp: number } | null;
+  weakestSkill: { branch: string; xp: number } | null;
+  logs: DailyLog[];
+}

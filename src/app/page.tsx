@@ -7,10 +7,11 @@ import TaskCard from '@/components/TaskCard';
 import CompletionToast from '@/components/CompletionToast';
 import LevelUpScreen from '@/components/LevelUpScreen';
 import XpFloat from '@/components/XpFloat';
+import WeeklySnapshotCard from '@/components/WeeklySnapshot';
 import { getXpProgress, BRANCHES, getBranchRank } from '@/lib/levels';
 
 export default function Dashboard() {
-  const { tasks, recalculate, recalculateWithAi, syncCalendar, syncSlack, isAiLoading, isSyncing, isSlackSyncing, isLoading, isAutoSyncing, syncProgress, aiError, settings, userStats, showCheckin, dismissCheckin, addTask } = useTaskContext();
+  const { tasks, recalculate, recalculateWithAi, syncCalendar, syncSlack, isAiLoading, isSyncing, isSlackSyncing, isLoading, isAutoSyncing, syncProgress, aiError, settings, userStats, showCheckin, dismissCheckin, addTask, weeklySnapshot, dismissWeeklySnapshot } = useTaskContext();
   const xpProgress = getXpProgress(userStats.totalXp);
   const { data: session } = useSession();
   const [checkinText, setCheckinText] = useState('');
@@ -172,6 +173,11 @@ export default function Dashboard() {
           );
         })}
       </div>
+
+      {/* Weekly snapshot — Monday mornings only */}
+      {weeklySnapshot && !isAutoSyncing && (
+        <WeeklySnapshotCard snapshot={weeklySnapshot} onDismiss={dismissWeeklySnapshot} />
+      )}
 
       {aiError && (
         <div className="mb-6 p-3 rounded bg-red-50 border border-red-200 text-xs text-red-700">

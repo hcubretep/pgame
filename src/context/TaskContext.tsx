@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from 'react';
 import { useSession } from 'next-auth/react';
-import { Task, Settings, UserStats } from '@/types';
+import { Task, Settings, UserStats, WeeklySnapshot } from '@/types';
 import { prioritizeTasks, generateDelegationBrief, findBestDelegate } from '@/lib/scoring';
 import { XP_AWARDS, getLevelFromXp } from '@/lib/levels';
 
@@ -46,6 +46,8 @@ interface TaskContextType {
   dismissLevelUp: () => void;
   showCheckin: boolean;
   dismissCheckin: () => void;
+  weeklySnapshot: WeeklySnapshot | null;
+  dismissWeeklySnapshot: () => void;
   recalculate: () => void;
   recalculateWithAi: () => Promise<void>;
   syncCalendar: () => Promise<void>;
@@ -81,6 +83,7 @@ const defaultSettings: Settings = {
 const SYNC_STALE_MS = 24 * 60 * 60 * 1000; // 24 hours — calendar/slack sync once per day
 const LAST_SYNC_KEY = 'pgame_last_sync';
 const LAST_CHECKIN_KEY = 'pgame_last_checkin'; // tracks daily check-in
+const LAST_SNAPSHOT_KEY = 'pgame_last_snapshot'; // tracks weekly snapshot dismissal
 
 const TaskContext = createContext<TaskContextType | null>(null);
 
@@ -101,6 +104,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const [userStats, setUserStats] = useState<UserStats>({ totalXp: 0, level: 1, streakCount: 0, streakLastDate: null, skillBuilderXp: 0, skillGrowerXp: 0, skillOperatorXp: 0, skillVisionaryXp: 0 });
   const [xpGainEvent, setXpGainEvent] = useState<XpGainEvent | null>(null);
   const [levelUpEvent, setLevelUpEvent] = useState<LevelUpEvent | null>(null);
+  const [weeklySnapshot, setWeeklySnapshot] = useState<WeeklySnapshot | null>(null);
   const xpTimerRef = useRef<NodeJS.Timeout | null>(null);
   const completionTimerRef = useRef<NodeJS.Timeout | null>(null);
   const hasAutoSynced = useRef(false);
@@ -160,6 +164,29 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         if (xpRes.ok) {
           const stats = await xpRes.json();
           setUserStats(stats);
+        }
+
+        // Show weekly snapshot on Mondays, once per week
+        const isMonday = new Date().getDay() === 1;
+        const lastSnapshot = localStorage.getItem(LAST_SNAPSHOT_KEY);
+        const thisMonday = (() => {
+          const d = new Date();
+          d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+          return d.toISOString().split('T')[0];
+        })();
+        if (isMonday && lastSnapshot !== thisMonday) {
+          try {
+            const snapRes = await fetch('/api/weekly-snapshot');
+            if (snapRes.ok) {
+              const snap = await snapRes.json();
+              // Only show if there was actual activity last week
+              if (snap.xpEarned > 0 || snap.tasksCompleted > 0) {
+                setWeeklySnapshot(snap);
+              }
+            }
+          } catch (e) {
+            console.error('Failed to load weekly snapshot:', e);
+          }
         }
       } catch (err) {
         console.error('Failed to load data:', err);
@@ -687,6 +714,13 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     setShowCheckin(false);
   }, []);
 
+  const dismissWeeklySnapshot = useCallback(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    localStorage.setItem(LAST_SNAPSHOT_KEY, d.toISOString().split('T')[0]);
+    setWeeklySnapshot(null);
+  }, []);
+
   const getDelegationBrief = useCallback(
     (taskId: string): string => {
       const task = tasks.find((t) => t.id === taskId);
@@ -715,6 +749,8 @@ export function TaskProvider({ children }: { children: ReactNode }) {
         dismissLevelUp,
         showCheckin,
         dismissCheckin,
+        weeklySnapshot,
+        dismissWeeklySnapshot,
         recalculate,
         recalculateWithAi,
         syncCalendar,
