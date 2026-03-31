@@ -7,7 +7,7 @@ import TaskCard from '@/components/TaskCard';
 import CompletionToast from '@/components/CompletionToast';
 import LevelUpScreen from '@/components/LevelUpScreen';
 import XpFloat from '@/components/XpFloat';
-import { getXpProgress } from '@/lib/levels';
+import { getXpProgress, BRANCHES, getBranchRank } from '@/lib/levels';
 
 export default function Dashboard() {
   const { tasks, recalculate, recalculateWithAi, syncCalendar, syncSlack, isAiLoading, isSyncing, isSlackSyncing, isLoading, isAutoSyncing, syncProgress, aiError, settings, userStats, showCheckin, dismissCheckin, addTask } = useTaskContext();
@@ -150,6 +150,27 @@ export default function Dashboard() {
             🔥 {userStats.streakCount}
           </span>
         )}
+      </div>
+
+      {/* Skill Branch Bars */}
+      <div className="grid grid-cols-2 gap-x-8 gap-y-2.5 mb-8">
+        {BRANCHES.map((branch) => {
+          const xp =
+            branch.key === 'builder'   ? userStats.skillBuilderXp :
+            branch.key === 'grower'    ? userStats.skillGrowerXp :
+            branch.key === 'operator'  ? userStats.skillOperatorXp :
+            userStats.skillVisionaryXp;
+          const { rank, progressPercent } = getBranchRank(xp, branch);
+          return (
+            <div key={branch.key} className="flex items-center gap-2 min-w-0">
+              <span className={`text-[10px] font-medium w-14 shrink-0 ${branch.textColor}`}>{branch.label}</span>
+              <div className="flex-1 h-1 bg-zinc-100 rounded-full overflow-hidden">
+                <div className={`h-full ${branch.color} rounded-full transition-all duration-500`} style={{ width: `${progressPercent}%` }} />
+              </div>
+              <span className="text-[10px] text-zinc-400 shrink-0 w-24 truncate">{rank.title}</span>
+            </div>
+          );
+        })}
       </div>
 
       {aiError && (

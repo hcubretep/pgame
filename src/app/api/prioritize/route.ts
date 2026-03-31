@@ -97,6 +97,7 @@ Respond with ONLY valid JSON (no markdown, no code fences):
       "title": "Short action-oriented title",
       "description": "What specifically to do and why it matters",
       "category": "sales|marketing|product|operations|finance|hiring",
+      "skill_branch": "builder|grower|operator|visionary",
       "urgency": 4,
       "revenueImpact": 5,
       "leverage": 4,
@@ -109,6 +110,7 @@ Respond with ONLY valid JSON (no markdown, no code fences):
       "title": "Task title (from generated, existing, or slack)",
       "source": "generated|existing|slack",
       "existingIndex": null,
+      "skill_branch": "builder|grower|operator|visionary",
       "reasoning": "Sharp 1-2 sentence explanation referencing business context"
     }
   ],
@@ -117,6 +119,7 @@ Respond with ONLY valid JSON (no markdown, no code fences):
       "title": "Task title",
       "source": "generated|existing|slack",
       "existingIndex": null,
+      "skill_branch": "builder|grower|operator|visionary",
       "reasoning": "Why delegate this",
       "delegateTo": "Delegate name"
     }
@@ -126,6 +129,7 @@ Respond with ONLY valid JSON (no markdown, no code fences):
       "title": "Task title",
       "source": "generated|existing|slack",
       "existingIndex": null,
+      "skill_branch": "builder|grower|operator|visionary",
       "reasoning": "Why defer"
     }
   ]
@@ -141,7 +145,8 @@ Rules:
 - For existing tasks, set existingIndex to the M-index number
 - Be ruthless — most things should be delegated or deferred
 - EVERY existing inbox task (M0, M1, M2...) MUST appear in exactly one category — do NOT skip any
-- Existing tasks should be PREFERRED over generated tasks when they match quarterly goals or are high-leverage`;
+- Existing tasks should be PREFERRED over generated tasks when they match quarterly goals or are high-leverage
+- skill_branch classification: builder=product/engineering/shipping, grower=sales/marketing/partnerships, operator=finance/legal/ops/admin, visionary=strategy/fundraising/planning. Every task must have one.`;
 
   try {
     const completion = await openai.chat.completions.create({
@@ -160,11 +165,12 @@ Rules:
     const manualTaskList = activeTasks.filter((t) => t.source !== 'google-calendar' && t.source !== 'slack');
     const finalTasks: Task[] = [];
 
-    const makeTask = (gen: { title: string; description: string; category: string; urgency: number; revenueImpact: number; leverage: number; founderOnly: boolean; estimatedHours: number }): Task => ({
+    const makeTask = (gen: { title: string; description: string; category: string; skill_branch?: string; urgency: number; revenueImpact: number; leverage: number; founderOnly: boolean; estimatedHours: number }): Task => ({
       id: `ai-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       title: gen.title,
       description: gen.description,
       category: gen.category as Task['category'],
+      skillBranch: (gen.skill_branch as Task['skillBranch']) || undefined,
       urgency: gen.urgency,
       revenueImpact: gen.revenueImpact,
       leverage: gen.leverage,
@@ -184,7 +190,7 @@ Rules:
     // Find slack tasks by title
     const slackTaskList = activeTasks.filter((t) => t.source === 'slack');
 
-    const resolveTask = (item: { title: string; source: string; existingIndex?: number | null }, fallbackCategory: string, fallbackScores: { urgency: number; revenueImpact: number; leverage: number; founderOnly: boolean }): Task => {
+    const resolveTask = (item: { title: string; source: string; existingIndex?: number | null; skill_branch?: string }, fallbackCategory: string, fallbackScores: { urgency: number; revenueImpact: number; leverage: number; founderOnly: boolean }): Task => {
       if (item.source === 'existing' && item.existingIndex != null && manualTaskList[item.existingIndex]) {
         return { ...manualTaskList[item.existingIndex] };
       }
@@ -205,6 +211,7 @@ Rules:
       const task = resolveTask(item, 'operations', { urgency: 4, revenueImpact: 4, leverage: 4, founderOnly: true });
       task.status = 'top3';
       task.reasoning = item.reasoning;
+      if (item.skill_branch) task.skillBranch = item.skill_branch as Task['skillBranch'];
       finalTasks.push(task);
     }
 
@@ -212,6 +219,7 @@ Rules:
       const task = resolveTask(item, 'operations', { urgency: 3, revenueImpact: 3, leverage: 3, founderOnly: false });
       task.status = 'outsource';
       task.reasoning = item.reasoning;
+      if (item.skill_branch) task.skillBranch = item.skill_branch as Task['skillBranch'];
       if (item.delegateTo) {
         task.delegateTo = item.delegateTo;
         task.delegationBrief = `**Task:** ${task.title}\n\n**Assigned to:** ${item.delegateTo}\n\n**Context:** ${task.description}\n\n**Why now:** ${item.reasoning}\n\n**Deadline:** ${task.deadline || 'This week.'}`;
@@ -223,6 +231,7 @@ Rules:
       const task = resolveTask(item, 'operations', { urgency: 2, revenueImpact: 2, leverage: 2, founderOnly: false });
       task.status = 'notToday';
       task.reasoning = item.reasoning;
+      if (item.skill_branch) task.skillBranch = item.skill_branch as Task['skillBranch'];
       finalTasks.push(task);
     }
 

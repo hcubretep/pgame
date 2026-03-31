@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '@/lib/auth';
-import { getUserByEmail, getUserStats, awardXp, updateStreak } from '@/lib/db';
+import { getUserByEmail, getUserStats, awardXp, updateStreak, awardSkillXp } from '@/lib/db';
 import { getLevelFromXp } from '@/lib/levels';
 
 export async function GET() {
@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
   const user = await getUserByEmail(session.user.email);
   if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
-  const { amount, perfectDay } = await req.json();
+  const { amount, perfectDay, skillBranch } = await req.json();
   if (!amount || amount <= 0) {
     return NextResponse.json({ error: 'Invalid amount' }, { status: 400 });
   }
@@ -42,6 +42,11 @@ export async function POST(req: NextRequest) {
 
   const result = await awardXp(user.id, amount + streakBonus);
   const levelDef = getLevelFromXp(result.newTotal);
+
+  // Route XP to the correct skill branch pool
+  if (skillBranch) {
+    await awardSkillXp(user.id, skillBranch, amount);
+  }
 
   return NextResponse.json({
     newTotal: result.newTotal,

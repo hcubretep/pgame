@@ -98,7 +98,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
   const [aiError, setAiError] = useState<string | null>(null);
   const [completionEvent, setCompletionEvent] = useState<CompletionEvent | null>(null);
   const [showCheckin, setShowCheckin] = useState(false);
-  const [userStats, setUserStats] = useState<UserStats>({ totalXp: 0, level: 1, streakCount: 0, streakLastDate: null });
+  const [userStats, setUserStats] = useState<UserStats>({ totalXp: 0, level: 1, streakCount: 0, streakLastDate: null, skillBuilderXp: 0, skillGrowerXp: 0, skillOperatorXp: 0, skillVisionaryXp: 0 });
   const [xpGainEvent, setXpGainEvent] = useState<XpGainEvent | null>(null);
   const [levelUpEvent, setLevelUpEvent] = useState<LevelUpEvent | null>(null);
   const xpTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -484,11 +484,13 @@ export function TaskProvider({ children }: { children: ReactNode }) {
       let delegationBrief: string | undefined;
       let recurTask: Task | undefined;
       let oldStatus: Task['status'] | undefined;
+      let taskSkillBranch: Task['skillBranch'] | undefined;
       let allTop3Cleared = false;
 
       setTasks((prev) => {
         const taskBeingMoved = prev.find((t) => t.id === taskId);
         oldStatus = taskBeingMoved?.status;
+        taskSkillBranch = taskBeingMoved?.skillBranch;
 
         const updated = prev.map((t) => {
           if (t.id !== taskId) return t;
@@ -583,10 +585,17 @@ export function TaskProvider({ children }: { children: ReactNode }) {
           fetch('/api/xp', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ amount: totalXp, perfectDay: allTop3Cleared }),
+            body: JSON.stringify({ amount: totalXp, perfectDay: allTop3Cleared, skillBranch: taskSkillBranch }),
           }).then(async (res) => {
             if (!res.ok) return;
             const data = await res.json();
+            // Refresh full stats to get updated skill XP
+            fetch('/api/xp').then(async (r) => {
+              if (r.ok) {
+                const stats = await r.json();
+                setUserStats(stats);
+              }
+            });
             setUserStats((prev) => ({
               ...prev,
               totalXp: data.newTotal,

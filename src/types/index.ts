@@ -20,6 +20,7 @@ export interface Task {
   gcalEventId?: string;
   slackChannel?: string;
   recurrence?: 'none' | 'daily' | 'weekly' | 'weekdays';
+  skillBranch?: 'builder' | 'grower' | 'operator' | 'visionary';
   createdAt: string;
 }
 
@@ -50,4 +51,8 @@ export interface UserStats {
   level: number;
   streakCount: number;
   streakLastDate: string | null;
+  skillBuilderXp: number;
+  skillGrowerXp: number;
+  skillOperatorXp: number;
+  skillVisionaryXp: number;
 }

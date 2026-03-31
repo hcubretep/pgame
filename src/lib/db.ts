@@ -27,7 +27,7 @@ export async function getUserByEmail(email: string) {
 export async function getUserStats(userId: string): Promise<UserStats> {
   const { data } = await getSupabase()
     .from('users')
-    .select('total_xp, level, streak_count, streak_last_date')
+    .select('total_xp, level, streak_count, streak_last_date, skill_builder_xp, skill_grower_xp, skill_operator_xp, skill_visionary_xp')
     .eq('id', userId)
     .single();
 
@@ -36,7 +36,34 @@ export async function getUserStats(userId: string): Promise<UserStats> {
     level: data?.level ?? 1,
     streakCount: data?.streak_count ?? 0,
     streakLastDate: data?.streak_last_date ?? null,
+    skillBuilderXp: data?.skill_builder_xp ?? 0,
+    skillGrowerXp: data?.skill_grower_xp ?? 0,
+    skillOperatorXp: data?.skill_operator_xp ?? 0,
+    skillVisionaryXp: data?.skill_visionary_xp ?? 0,
   };
+}
+
+export async function awardSkillXp(userId: string, branch: string, amount: number): Promise<void> {
+  const columnMap: Record<string, string> = {
+    builder:  'skill_builder_xp',
+    grower:   'skill_grower_xp',
+    operator: 'skill_operator_xp',
+    visionary: 'skill_visionary_xp',
+  };
+  const column = columnMap[branch];
+  if (!column) return;
+
+  const { data } = await getSupabase()
+    .from('users')
+    .select(column)
+    .eq('id', userId)
+    .single();
+
+  const current = (data as Record<string, number> | null)?.[column] ?? 0;
+  await getSupabase()
+    .from('users')
+    .update({ [column]: current + amount })
+    .eq('id', userId);
 }
 
 export async function updateStreak(userId: string): Promise<{ newStreak: number; bonusXp: number }> {
@@ -112,6 +139,7 @@ interface TaskRow {
   source: string | null;
   gcal_event_id: string | null;
   recurrence: string | null;
+  skill_branch: string | null;
   created_at: string;
 }
 
@@ -132,6 +160,7 @@ function rowToTask(row: TaskRow): Task {
     delegationBrief: row.delegation_brief || undefined,
     reasoning: row.reasoning || undefined,
     recurrence: (row.recurrence as Task['recurrence']) || 'none',
+    skillBranch: (row.skill_branch as Task['skillBranch']) || undefined,
     createdAt: row.created_at,
   };
 }
@@ -189,6 +218,7 @@ export async function saveTasks(userId: string, tasks: Task[]): Promise<void> {
     source: t.source || (t.id.startsWith('gcal_') ? 'gcal' : t.id.startsWith('ai') ? 'ai' : t.id.startsWith('slack_') ? 'slack' : 'manual'),
     gcal_event_id: t.id.startsWith('gcal_') ? t.id.replace('gcal_', '') : null,
     recurrence: t.recurrence || 'none',
+    skill_branch: t.skillBranch || null,
   }));
 
   // Upsert: update existing tasks, insert new ones
@@ -233,6 +263,7 @@ export async function addTaskToDb(userId: string, task: Task): Promise<string> {
       status: task.status,
       source: 'manual',
       recurrence: task.recurrence || 'none',
+      skill_branch: task.skillBranch || null,
     })
     .select('id')
     .single();
