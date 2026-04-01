@@ -11,6 +11,9 @@ export const authOptions: NextAuthOptions = {
         params: {
           scope: 'openid email profile https://www.googleapis.com/auth/calendar.readonly',
           access_type: 'offline',
+          // Always prompt for consent so Google returns a refresh_token,
+          // even when the user has already authorised the app before.
+          prompt: 'consent',
         },
       },
     }),
@@ -36,34 +39,42 @@ export const authOptions: NextAuthOptions = {
         token.expiresAt = account.expires_at;
       }
 
-      if (token.expiresAt && Date.now() / 1000 < (token.expiresAt as number)) {
+      // Token still valid — return early (60s buffer to avoid edge expiry)
+      if (token.expiresAt && Date.now() / 1000 < (token.expiresAt as number) - 60) {
         return token;
       }
 
-      if (token.refreshToken) {
-        try {
-          const res = await fetch('https://oauth2.googleapis.com/token', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: new URLSearchParams({
-              client_id: process.env.GOOGLE_CLIENT_ID!,
-              client_secret: process.env.GOOGLE_CLIENT_SECRET!,
-              grant_type: 'refresh_token',
-              refresh_token: token.refreshToken as string,
-            }),
-          });
+      // No refresh token — can't refresh, mark error so UI can prompt re-login
+      if (!token.refreshToken) {
+        token.error = 'RefreshAccessTokenError';
+        return token;
+      }
 
-          const data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'Refresh failed');
+      try {
+        const res = await fetch('https://oauth2.googleapis.com/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: new URLSearchParams({
+            client_id: process.env.GOOGLE_CLIENT_ID!,
+            client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+            grant_type: 'refresh_token',
+            refresh_token: token.refreshToken as string,
+          }),
+        });
 
-          token.accessToken = data.access_token;
-          token.expiresAt = Math.floor(Date.now() / 1000) + data.expires_in;
-          if (data.refresh_token) {
-            token.refreshToken = data.refresh_token;
-          }
-        } catch {
-          token.error = 'RefreshAccessTokenError';
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Refresh failed');
+
+        token.accessToken = data.access_token;
+        token.expiresAt = Math.floor(Date.now() / 1000) + data.expires_in;
+        // Google only returns a new refresh_token if rotation is enabled
+        if (data.refresh_token) {
+          token.refreshToken = data.refresh_token;
         }
+        // Clear any previous error on successful refresh
+        delete token.error;
+      } catch {
+        token.error = 'RefreshAccessTokenError';
       }
 
       return token;

@@ -134,6 +134,9 @@ export function TaskProvider({ children }: { children: ReactNode }) {
     const currentSession = session;
     async function loadData() {
       let loadedTasks: Task[] = [];
+      // Holds the user's actual settings — used for AI prioritize + Slack sync below.
+      // Falls back to defaultSettings if the DB fetch fails.
+      let loadedSettings: Settings = defaultSettings;
       try {
         const [tasksRes, settingsRes, xpRes] = await Promise.all([
           fetch('/api/tasks'),
@@ -155,6 +158,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
             if (dbSettings.founderName === 'Founder' && currentSession?.user?.name) {
               dbSettings.founderName = currentSession.user.name.split(' ')[0];
             }
+            loadedSettings = dbSettings;
             setSettings(dbSettings);
           } else if (currentSession?.user?.name) {
             setSettings((prev) => ({ ...prev, founderName: currentSession.user?.name || prev.founderName }));
@@ -237,7 +241,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
             const r = await fetch('/api/slack-sync', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ channels: defaultSettings.slackChannels }),
+              body: JSON.stringify({ channels: loadedSettings.slackChannels }),
             });
             if (r.ok) {
               const d = await r.json();
@@ -276,7 +280,7 @@ export function TaskProvider({ children }: { children: ReactNode }) {
             const aiRes = await fetch('/api/prioritize', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ tasks: tasksForAi, settings: defaultSettings }),
+              body: JSON.stringify({ tasks: tasksForAi, settings: loadedSettings }),
             });
             if (aiRes.ok) {
               const aiData = await aiRes.json();
